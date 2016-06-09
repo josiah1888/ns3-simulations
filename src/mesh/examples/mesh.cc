@@ -63,6 +63,11 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("TestMeshScript");
 
+/*  Terminal commands
+*   clear && ./waf --run "mesh --x-size=30 --y-size=3 --time=250 --packet-interval=5 --packet-size=1 --step=100"
+*/
+
+
 class MeshTest
 {
 public:
@@ -210,29 +215,28 @@ MeshTest::InstallInternetStack ()
 void
 MeshTest::InstallApplication ()
 {
-  int destIdx = m_xSize * m_ySize - 1;
+  int destIdx = 0;
 
-  UdpEchoServerHelper echoServer (9);
-  ApplicationContainer serverApps = echoServer.Install (nodes.Get (destIdx));
+  UdpServerHelper server (9);
+  ApplicationContainer serverApps = server.Install (nodes.Get (destIdx));
   serverApps.Start (Seconds (0.0));
   serverApps.Stop (Seconds (m_totalTime));
-  UdpEchoClientHelper echoClient (interfaces.GetAddress (0), 9);
-  echoClient.SetAttribute ("MaxPackets", UintegerValue ((uint32_t)(m_totalTime*(1/m_packetInterval))));
-  echoClient.SetAttribute ("Interval", TimeValue (Seconds (m_packetInterval)));
-  echoClient.SetAttribute ("PacketSize", UintegerValue (m_packetSize));
 
-  ApplicationContainer clientApp = echoClient.Install(nodes.Get(1));
-  clientApp.Start (Seconds (0.0));
-  clientApp.Stop (Seconds (m_totalTime));
+  // ApplicationContainer clientApp = echoClient.Install(nodes.Get(destIdx - 1));
+  // clientApp.Start (Seconds (0.0));
+  // clientApp.Stop (Seconds (m_totalTime));
 
-  // for(int i = 0; i < m_xSize * m_ySize; i++) {
-  //   if (i != destIdx) {
-  //     ApplicationContainer clientApp = echoClient.Install(nodes.Get(i));
-  //     clientApp.Start (Seconds (0.0));
-  //     clientApp.Stop (Seconds (m_totalTime));
-  //     break;
-  //   }
-  // }
+  for(int i = 0; i < m_xSize * m_ySize; i++) {
+    if (i != destIdx) {
+      UdpClientHelper client (interfaces.GetAddress (0), 9);
+      client.SetAttribute ("MaxPackets", UintegerValue ((uint32_t)(m_totalTime*(1/m_packetInterval))));
+      client.SetAttribute ("Interval", TimeValue (Seconds (m_packetInterval)));
+      client.SetAttribute ("PacketSize", UintegerValue (m_packetSize));
+      ApplicationContainer clientApp = client.Install(nodes.Get(i));
+      clientApp.Start (Seconds (0.0));
+      clientApp.Stop (Seconds (m_totalTime));
+    }
+  }
 }
 int
 MeshTest::Run ()
@@ -281,8 +285,8 @@ MeshTest::PrintMap()
 int
 main (int argc, char *argv[])
 {
-  LogComponentEnable ("UdpEchoClientApplication", LOG_LEVEL_INFO);
-  LogComponentEnable ("UdpEchoServerApplication", LOG_LEVEL_INFO);
+  LogComponentEnable ("UdpClient", LOG_LEVEL_INFO);
+  LogComponentEnable ("UdpServer", LOG_LEVEL_INFO);
   MeshTest t; 
   t.Configure (argc, argv);
   return t.Run ();
