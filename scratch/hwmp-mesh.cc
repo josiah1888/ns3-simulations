@@ -277,7 +277,7 @@ MeshTest::Run ()
 
   PrintMap();
 
-  AnimationInterface anim ("mesh-animation.xml");
+  AnimationInterface anim ("hwmp-mesh-animation.xml");
 
   Simulator::Run ();
   Simulator::Destroy ();

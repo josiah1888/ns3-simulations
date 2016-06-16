@@ -28,6 +28,8 @@
 #include "ns3/random-variable-stream.h"
 #include <fstream>
 
+#include "ns3/netanim-module.h"
+
 //#include "myapp.h"
 
 NS_LOG_COMPONENT_DEFINE ("MyExpr");
@@ -213,7 +215,7 @@ int main (int argc, char *argv[])
   Time FailureTime = Seconds(30.0);
   double FailureProb = 0.0;
   Time StopTime = Seconds(780.0);
-  Time LocationTime = Seconds(180.0);
+  Time LocationTime = Seconds(10.0); // 180.0
   double SrcSpeed = 2.8; //[m/s] speed of jogging
 
 
@@ -429,7 +431,7 @@ int main (int argc, char *argv[])
   //ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
 
   Ptr<MyApp> app = CreateObject<MyApp> ();
-  app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate ("5Mbps"));
+  app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate (".00001Mbps")); // 5Mbps
   sinkSrc.Get (0)->AddApplication (app);
   app->SetStartTime (Seconds (1.0));
   app->SetStopTime (StopTime);
@@ -470,6 +472,7 @@ wifiPhy.EnablePcap ("mobicom_expr", devices.Get(1)); //save pcap file for sink
   DecideOnNodesFailure (allTransmissionNodes, FailureTime, FailureProb, StopTime); // simulate node failures by moving them far from others
 
   Simulator::Stop (StopTime);
+  AnimationInterface anim ("mobicom_expr-animation.xml");
   Simulator::Run ();
   Simulator::Destroy ();
   NS_LOG_INFO ("Done.");
