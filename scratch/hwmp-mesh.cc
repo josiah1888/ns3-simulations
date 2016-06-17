@@ -172,7 +172,7 @@ MeshTest::CreateNodes ()
    * Stack installer creates all needed protocols and install them to
    * mesh point device
    */
-  mesh = MeshHelper::Default ();
+  mesh = MeshHelper::Default (); // --
   if (!Mac48Address (m_root.c_str ()).IsBroadcast ())
     {
       mesh.SetStackInstaller (m_stack, "Root", Mac48AddressValue (Mac48Address (m_root.c_str ())));

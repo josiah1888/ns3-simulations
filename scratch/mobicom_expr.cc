@@ -29,6 +29,7 @@
 #include <fstream>
 
 #include "ns3/netanim-module.h"
+#include "ns3/mesh-helper.h"
 
 //#include "myapp.h"
 
@@ -205,6 +206,87 @@ RxDrop (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> p)
   *stream->GetStream () << "Rx drop at: "<< Simulator::Now ().GetSeconds () << std::endl;
 }
 
+static void
+SetupGPSR (NodeContainer nodes, uint16_t RepulsionMode) {
+  //setup routing protocol
+  GpsrHelper gpsr; // --
+  gpsr.Set("RepulsionMode",UintegerValue(RepulsionMode));
+
+  // Enable OLSR
+  OlsrHelper olsr; // --
+  Ipv4StaticRoutingHelper staticRouting;
+
+  Ipv4ListRoutingHelper list; // --
+  list.Add (staticRouting, 0);
+  list.Add (olsr, 10);
+
+  //AodvHelper aodv; // shouldn't do anything
+  /* 2. Setup TCP/IP & AODV
+    AodvHelper aodv; // Use default parameters here
+     InternetStackHelper internetStack;
+    internetStack.SetRoutingHelper (aodv);
+    internetStack.Install (*m_nodes);
+    streamsUsed += internetStack.AssignStreams (*m_nodes, streamsUsed);
+    // InternetStack uses m_size more streams
+    NS_TEST_ASSERT_MSG_EQ (streamsUsed, (devices.GetN () * 8) + m_size, "Stream assignment mismatch");
+    streamsUsed += aodv.AssignStreams (*m_nodes, streamsUsed);
+    // AODV uses m_size more streams
+    NS_TEST_ASSERT_MSG_EQ (streamsUsed, ((devices.GetN () * 8) + (2*m_size)), "Stream assignment mismatch");
+*/
+
+  InternetStackHelper internet;
+  internet.SetRoutingHelper (gpsr); // --
+  //internet.SetRoutingHelper (list);
+  //internet.SetRoutingHelper (aodv); // has effect on the next Install ()
+  internet.Install (nodes);
+
+  gpsr.Install (); // install on all nodes
+}
+
+static void
+SetupHWMP (NodeContainer nodes, NetDeviceContainer devices, YansWifiPhyHelper wifiPhy) {
+  std::string root = "ff:ff:ff:ff:ff:ff";
+
+  MeshHelper mesh = MeshHelper::Default();
+  // Configure YansWifiChannel
+  /*
+  YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default ();
+  YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default ();
+  wifiPhy.SetChannel (wifiChannel.Create ());
+  */
+
+  if (!Mac48Address (root.c_str ()).IsBroadcast ())
+    {
+      mesh.SetStackInstaller ("ns3::Dot11sStack", "Root", Mac48AddressValue (Mac48Address (root.c_str ())));
+      // need to simplify this code, just use the branch that I want
+      // Probably need something like "Dot11gStack"
+    }
+  else
+    {
+      //If root is not set, we do not use "Root" attribute, because it
+      //is specified only for 11s
+      mesh.SetStackInstaller ("ns3::Dot11sStack");
+    }
+
+  mesh.SetSpreadInterfaceChannels (MeshHelper::SPREAD_CHANNELS);
+    
+  mesh.SetMacType ("RandomStart", TimeValue (Seconds (.01))); // Will this cause a bias in the simulation?
+  // Set number of interfaces - default is single-interface mesh point
+  mesh.SetNumberOfInterfaces (1);
+  // Install protocols and return container if MeshPointDevices
+
+  InternetStackHelper internetStack;
+  internetStack.Install (nodes);
+  
+  /*
+  Ipv4AddressHelper address;
+  address.SetBase ("10.1.1.0", "255.255.255.0");
+  interfaces = address.Assign (meshDevices);
+  */
+
+  devices = mesh.Install (wifiPhy, nodes);
+}
+
 int main (int argc, char *argv[])
 {
   bool enableFlowMonitor = false;
@@ -217,7 +299,8 @@ int main (int argc, char *argv[])
   Time StopTime = Seconds(780.0);
   Time LocationTime = Seconds(10.0); // 180.0
   double SrcSpeed = 2.8; //[m/s] speed of jogging
-
+  std::string RoutingModel = "GPSR";
+  bool EnableNetAnim = false;
 
   CommandLine cmd;
   cmd.AddValue ("EnableMonitor", "Enable Flow Monitor", enableFlowMonitor);
@@ -228,6 +311,8 @@ int main (int argc, char *argv[])
   cmd.AddValue ("StopTime", "Time to Stop Simulation", StopTime);
   cmd.AddValue ("LocationTime", "Time src spends at each location", LocationTime);
   cmd.AddValue ("SrcSpeed", "Speed of the paramedic who acts as a src between locations", SrcSpeed);
+  cmd.AddValue ("RoutingModel", "Routing algorithm to use. Can be 'HWMP' or 'GPSR'", RoutingModel);
+  cmd.AddValue ("EnableNetAnim", "Enable simulation recording for NetAnim", EnableNetAnim);
   cmd.Parse (argc, argv);
 
 //
@@ -295,40 +380,19 @@ int main (int argc, char *argv[])
 
 
   NetDeviceContainer devices;
+
+  if (RoutingModel == "GPSR") {
+    std::cout << "using GPSR\n";
+    SetupGPSR(c, RepulsionMode);
+  } else if (RoutingModel == "HWMP") {
+    std::cout << "using HWMP\n";
+    SetupHWMP(c, devices, wifiPhy);
+  }
+
+
   devices = wifi.Install (wifiPhy, wifiMac, c);
 
-
-  //setup routing protocol
-  GpsrHelper gpsr;
-  gpsr.Set("RepulsionMode",UintegerValue(RepulsionMode));
-
-  // Enable OLSR
-  OlsrHelper olsr;
-  Ipv4StaticRoutingHelper staticRouting;
-
-  Ipv4ListRoutingHelper list;
-  list.Add (staticRouting, 0);
-  list.Add (olsr, 10);
-
-  AodvHelper aodv;
-  /* 2. Setup TCP/IP & AODV
-    AodvHelper aodv; // Use default parameters here
-     InternetStackHelper internetStack;
-    internetStack.SetRoutingHelper (aodv);
-    internetStack.Install (*m_nodes);
-    streamsUsed += internetStack.AssignStreams (*m_nodes, streamsUsed);
-    // InternetStack uses m_size more streams
-    NS_TEST_ASSERT_MSG_EQ (streamsUsed, (devices.GetN () * 8) + m_size, "Stream assignment mismatch");
-    streamsUsed += aodv.AssignStreams (*m_nodes, streamsUsed);
-    // AODV uses m_size more streams
-    NS_TEST_ASSERT_MSG_EQ (streamsUsed, ((devices.GetN () * 8) + (2*m_size)), "Stream assignment mismatch");
-*/
-
-  InternetStackHelper internet;
-  internet.SetRoutingHelper (gpsr);
-  //internet.SetRoutingHelper (list);
-  //internet.SetRoutingHelper (aodv); // has effect on the next Install ()
-  internet.Install (c);
+  
 
   // Set up Addresses
   Ipv4AddressHelper ipv4;
@@ -415,7 +479,7 @@ int main (int argc, char *argv[])
   srcModel->AddWaypoint(location3);
 
   //istall gpsr headers to all nodes
-  gpsr.Install ();
+  //gpsr.Install (); // Does this need to be done in here?
 
   //setup applications
   NS_LOG_INFO ("Create Applications.");
@@ -431,17 +495,17 @@ int main (int argc, char *argv[])
   //ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
 
   Ptr<MyApp> app = CreateObject<MyApp> ();
-  app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate (".00001Mbps")); // 5Mbps
+  app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate ("5Mbps"));
   sinkSrc.Get (0)->AddApplication (app);
   app->SetStartTime (Seconds (1.0));
   app->SetStopTime (StopTime);
 
   AsciiTraceHelper asciiTraceHelper;
-  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_mobicom_expr.txt");
+  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_mobicom_expr_" + RoutingModel + ".txt");
   ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
 
 
-  Ptr<OutputStreamWrapper> stream2 = asciiTraceHelper.CreateFileStream ("pdrop_mobicom_expr.txt");
+  Ptr<OutputStreamWrapper> stream2 = asciiTraceHelper.CreateFileStream ("pdrop_mobicom_expr_" + RoutingModel + ".txt");
   devices.Get (1)->TraceConnectWithoutContext ("PhyRxDrop", MakeBoundCallback (&RxDrop, stream2));
   //devices.Get (1)->TraceConnectWithoutContext ("PhyRxDrop", MakeCallback (&RxDrop));
 
@@ -472,7 +536,9 @@ wifiPhy.EnablePcap ("mobicom_expr", devices.Get(1)); //save pcap file for sink
   DecideOnNodesFailure (allTransmissionNodes, FailureTime, FailureProb, StopTime); // simulate node failures by moving them far from others
 
   Simulator::Stop (StopTime);
-  AnimationInterface anim ("mobicom_expr-animation.xml");
+  if (EnableNetAnim) {
+    AnimationInterface anim ("mobicom_expr_animation_" + RoutingModel + ".xml");
+  }
   Simulator::Run ();
   Simulator::Destroy ();
   NS_LOG_INFO ("Done.");
