@@ -56,6 +56,13 @@ using namespace ns3;
 // install in the source node.
 // ===========================================================================
 //
+
+/**  Terminal commands
+ *   clear && ./waf --run "mobicom_expr --RoutingModel=GPSR"
+ *   clear && ./waf --run "mobicom_expr --RoutingModel=HWMP"
+ *   git add scratch/hwmp-mesh.cc scratch/mobicom_expr.cc
+*/
+
 class MyApp : public Application
 {
 public:
