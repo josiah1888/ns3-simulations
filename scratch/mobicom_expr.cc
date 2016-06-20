@@ -30,6 +30,9 @@
 
 #include "ns3/netanim-module.h"
 #include "ns3/mesh-helper.h"
+#include "ns3/flow-monitor.h"
+#include <vector>
+#include <utility>
 
 //#include "myapp.h"
 
@@ -145,6 +148,7 @@ MyApp::SendPacket (void)
   Ptr<Packet> packet = Create<Packet> (m_packetSize);
   m_socket->Send (packet);
 //  std::cout << Simulator::Now ().GetSeconds () << "\t" << "one packet has been sent! PacketSize="<<m_packetSize<<"\n";
+  //std::cout << "TxSent\n";
   ScheduleTx ();
 }
 
@@ -206,18 +210,34 @@ CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
   *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << oldCwnd << "\t" << newCwnd << std::endl;
 }
 
-static void
+/*static void
 RxDrop (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> p)
 {
-  //NS_LOG_UNCOND ("RxDrop at " << Simulator::Now ().GetSeconds ());
+  NS_LOG_UNCOND ("RxDrop at " << Simulator::Now ().GetSeconds ());
   *stream->GetStream () << "Rx drop at: "<< Simulator::Now ().GetSeconds () << std::endl;
+  std::cout << "Rx drop at: "<< Simulator::Now ().GetSeconds () << std::endl;
 }
+*/
 
 static void
-SetupGPSR (NodeContainer nodes, uint16_t RepulsionMode) {
+SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy, uint16_t RepulsionMode, std::string phyMode) {
+  // Set up WiFi
+  WifiHelper wifi;
+  
+  // Add a non-QoS upper mac
+  NqosWifiMacHelper wifiMac = NqosWifiMacHelper::Default ();
+  wifiMac.SetType ("ns3::AdhocWifiMac");
+
+  // Set 802.11g standard
+  wifi.SetStandard (WIFI_PHY_STANDARD_80211g);
+
+  wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
+                                "DataMode",StringValue(phyMode),
+                                "ControlMode",StringValue(phyMode));
+
   //setup routing protocol
   GpsrHelper gpsr; // --
-  gpsr.Set("RepulsionMode",UintegerValue(RepulsionMode));
+  gpsr.Set("RepulsionMode", UintegerValue(RepulsionMode));
 
   // Enable OLSR
   OlsrHelper olsr; // --
@@ -248,36 +268,21 @@ SetupGPSR (NodeContainer nodes, uint16_t RepulsionMode) {
   internet.Install (nodes);
 
   gpsr.Install (); // install on all nodes
+
+  devices = wifi.Install (wifiPhy, wifiMac, nodes);
 }
 
 static void
-SetupHWMP (NodeContainer nodes, NetDeviceContainer devices, YansWifiPhyHelper wifiPhy) {
+SetupHWMP (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy) {
   std::string root = "ff:ff:ff:ff:ff:ff";
 
   MeshHelper mesh = MeshHelper::Default();
-  // Configure YansWifiChannel
-  /*
-  YansWifiPhyHelper wifiPhy = YansWifiPhyHelper::Default ();
-  YansWifiChannelHelper wifiChannel = YansWifiChannelHelper::Default ();
-  wifiPhy.SetChannel (wifiChannel.Create ());
-  */
 
-  if (!Mac48Address (root.c_str ()).IsBroadcast ())
-    {
-      mesh.SetStackInstaller ("ns3::Dot11sStack", "Root", Mac48AddressValue (Mac48Address (root.c_str ())));
-      // need to simplify this code, just use the branch that I want
-      // Probably need something like "Dot11gStack"
-    }
-  else
-    {
-      //If root is not set, we do not use "Root" attribute, because it
-      //is specified only for 11s
-      mesh.SetStackInstaller ("ns3::Dot11sStack");
-    }
+  mesh.SetStackInstaller ("ns3::Dot11sStack");
 
   mesh.SetSpreadInterfaceChannels (MeshHelper::SPREAD_CHANNELS);
     
-  mesh.SetMacType ("RandomStart", TimeValue (Seconds (.01))); // Will this cause a bias in the simulation?
+  //mesh.SetMacType ("RandomStart", TimeValue (Seconds (.01))); // Will this cause a bias in the simulation?
   // Set number of interfaces - default is single-interface mesh point
   mesh.SetNumberOfInterfaces (1);
   // Install protocols and return container if MeshPointDevices
@@ -294,6 +299,115 @@ SetupHWMP (NodeContainer nodes, NetDeviceContainer devices, YansWifiPhyHelper wi
   devices = mesh.Install (wifiPhy, nodes);
 }
 
+
+static void
+SetConstantMobilityGrid(NodeContainer& nodes, double minx, double miny, double deltax, double deltay, uint gridWidth)
+{
+  MobilityHelper mobility;
+  mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
+                                 "MinX", DoubleValue (minx),
+                                 "MinY", DoubleValue (miny),
+                                 "DeltaX", DoubleValue (deltax),
+                                 "DeltaY", DoubleValue (deltay),
+                                 "GridWidth", UintegerValue (gridWidth),
+                                 "LayoutType", StringValue ("RowFirst"));
+  mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+  mobility.Install(nodes);
+}
+
+static void
+SetConstantPositionMobility(Ptr<Node> nodes, Vector v)
+{
+  //sink is static and represents adhoc metwork edge, e.g., internet gateway
+  MobilityHelper mobility;
+  Ptr<ListPositionAllocator> positionAlloc = CreateObject <ListPositionAllocator>();
+  positionAlloc ->Add(v);
+  mobility.SetPositionAllocator(positionAlloc);
+  mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+  mobility.Install(nodes);
+}
+
+static void SetupWaypointMobility(Ptr<Node> node, Vector startingLocation)
+{
+  MobilityHelper mobilitySrc;
+  Ptr<ListPositionAllocator> positionAllocSrc = CreateObject <ListPositionAllocator>();
+  positionAllocSrc ->Add(startingLocation);
+  mobilitySrc.SetPositionAllocator(positionAllocSrc);
+  mobilitySrc.SetMobilityModel ("ns3::WaypointMobilityModel", "InitialPositionIsWaypoint", BooleanValue (true));
+  mobilitySrc.Install(node);
+}
+
+static void SetWaypoints(Ptr<Node> node, std::vector<std::pair<Time, Vector> > waypoints)
+{
+  // Pass in vector of tuples of destinations and time to get there
+  Ptr<WaypointMobilityModel> model = node->GetObject<WaypointMobilityModel>();
+  Time elapsed = Seconds (1);
+  for (std::vector<std::pair<Time, Vector> >::iterator it=waypoints.begin() ; it < waypoints.end(); it++) {
+    std::pair<Time, Vector> waypoint = *it;
+    elapsed += waypoint.first;
+    Waypoint w (elapsed, waypoint.second);
+    model->AddWaypoint(w);
+
+    //std::cout << "time: " << elapsed.GetSeconds () << "\n";
+  }
+}
+
+static void SetupMobility(std::string mobilityScene, NodeContainer& c1, NodeContainer& c2, NodeContainer& c3, NodeContainer& c4, NodeContainer& sinkSrc)
+{
+  Time locationTime = Seconds(10.0);
+  double srcSpeed = 2.8;
+
+  if (mobilityScene == "static-grid") {
+    SetConstantMobilityGrid(c1, 50, 0, 50, 50, 1);
+    SetConstantMobilityGrid(c2, 350, 0, 50, 50, 1);
+    SetConstantMobilityGrid(c3, 100, 0, 50, 50, 5);
+    SetConstantMobilityGrid(c4, 100, 650, 50, 50, 5);
+
+    SetupWaypointMobility(sinkSrc.Get(0), Vector(0,0,0));
+    std::vector<std::pair<Time, Vector> > waypoints;
+    waypoints.push_back (std::make_pair(locationTime, Vector(0,0,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,325,0)));
+    waypoints.push_back (std::make_pair(locationTime, Vector(0,325,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,0,0)));
+    SetWaypoints(sinkSrc.Get (0), waypoints);
+
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(400, 325, 0));
+  } else if (mobilityScene == "mobile-nodes") {
+    SetConstantMobilityGrid(c2, 350, 0, 50, 50, 1);
+    SetConstantMobilityGrid(c3, 100, 0, 50, 50, 5);
+    SetConstantMobilityGrid(c4, 100, 650, 50, 50, 5);
+
+    for (int i = 0; i < c1.GetN (); i++) {
+      SetupWaypointMobility(c1.Get (i), Vector(50, 50 * i,0));
+      std::vector<std::pair<Time, Vector> > waypoints;
+      waypoints.push_back (std::make_pair(Seconds (3), Vector(50 + 25 * i, 50 + 25 * i, 0)));
+      SetWaypoints(c1.Get (i), waypoints);
+    }
+
+    // Move left wall of nodes to top right ish
+    /*
+    SetupWaypointMobility(sinkSrc.Get(0), Vector(0,0,0));
+    std::vector<std::pair<Time, Vector> > waypoints;
+    waypoints.push_back (std::make_pair(locationTime, Vector(0,0,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,325,0)));
+    waypoints.push_back (std::make_pair(locationTime, Vector(0,325,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,0,0)));
+    SetWaypoints(sinkSrc.Get (0), waypoints);
+    */
+
+
+    SetupWaypointMobility(sinkSrc.Get(0), Vector(0,0,0));
+    std::vector<std::pair<Time, Vector> > waypoints;
+    waypoints.push_back (std::make_pair(locationTime, Vector(0,0,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,325,0)));
+    waypoints.push_back (std::make_pair(locationTime, Vector(0,325,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,0,0)));
+    SetWaypoints(sinkSrc.Get (0), waypoints);
+
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(400, 325, 0));
+  }
+}
+
 int main (int argc, char *argv[])
 {
   bool enableFlowMonitor = false;
@@ -308,6 +422,8 @@ int main (int argc, char *argv[])
   double SrcSpeed = 2.8; //[m/s] speed of jogging
   std::string RoutingModel = "GPSR";
   bool EnableNetAnim = false;
+  double NodeDataRate = 5.0;
+  std::string MobilityScene = "static-grid";
 
   CommandLine cmd;
   cmd.AddValue ("EnableMonitor", "Enable Flow Monitor", enableFlowMonitor);
@@ -320,6 +436,8 @@ int main (int argc, char *argv[])
   cmd.AddValue ("SrcSpeed", "Speed of the paramedic who acts as a src between locations", SrcSpeed);
   cmd.AddValue ("RoutingModel", "Routing algorithm to use. Can be 'HWMP' or 'GPSR'", RoutingModel);
   cmd.AddValue ("EnableNetAnim", "Enable simulation recording for NetAnim", EnableNetAnim);
+  cmd.AddValue ("NodeDataRate", "Data rate for nodes", NodeDataRate);
+  cmd.AddValue ("MobilityScene", "Which mobility scene to use. Can be 'static-grid' or ...", MobilityScene);
   cmd.Parse (argc, argv);
 
 //
@@ -334,6 +452,7 @@ int main (int argc, char *argv[])
   c3.Create(5);
   NodeContainer c4;
   c4.Create(5);
+  
 
   NodeContainer allTransmissionNodes;
   allTransmissionNodes.Add(c1);
@@ -348,11 +467,6 @@ int main (int argc, char *argv[])
   NodeContainer c;
   c.Add(sinkSrc); //add sink and source
   c.Add(allTransmissionNodes);
-
-
-
-  // Set up WiFi
-  WifiHelper wifi;
 
   YansWifiPhyHelper wifiPhy =  YansWifiPhyHelper::Default ();
   wifiPhy.SetPcapDataLinkType (YansWifiPhyHelper::DLT_IEEE802_11);
@@ -374,32 +488,16 @@ int main (int argc, char *argv[])
 
   wifiPhy.SetChannel (wifiChannel.Create ());
 
-  // Add a non-QoS upper mac
-  NqosWifiMacHelper wifiMac = NqosWifiMacHelper::Default ();
-  wifiMac.SetType ("ns3::AdhocWifiMac");
-
-  // Set 802.11g standard
-  wifi.SetStandard (WIFI_PHY_STANDARD_80211g);
-
-  wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
-                                "DataMode",StringValue(phyMode),
-                                "ControlMode",StringValue(phyMode));
-
 
   NetDeviceContainer devices;
 
   if (RoutingModel == "GPSR") {
     std::cout << "using GPSR\n";
-    SetupGPSR(c, RepulsionMode);
+    SetupGPSR(c, devices, wifiPhy, RepulsionMode, phyMode);
   } else if (RoutingModel == "HWMP") {
     std::cout << "using HWMP\n";
     SetupHWMP(c, devices, wifiPhy);
   }
-
-
-  devices = wifi.Install (wifiPhy, wifiMac, c);
-
-  
 
   // Set up Addresses
   Ipv4AddressHelper ipv4;
@@ -407,86 +505,8 @@ int main (int argc, char *argv[])
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer ifcont = ipv4.Assign (devices);
 
-// Set Mobility for all nodes
-  MobilityHelper mobility1;
-  mobility1.SetPositionAllocator ("ns3::GridPositionAllocator",
-                                 "MinX", DoubleValue (50.0),
-                                 "MinY", DoubleValue (0.0),
-                                 "DeltaX", DoubleValue (50),
-                                 "DeltaY", DoubleValue (50),
-                                 "GridWidth", UintegerValue (1),
-                                 "LayoutType", StringValue ("RowFirst"));
-  mobility1.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mobility1.Install(c1);
+  SetupMobility(MobilityScene, c1, c2, c3, c4, sinkSrc);
 
-  MobilityHelper mobility2;
-  mobility2.SetPositionAllocator ("ns3::GridPositionAllocator",
-                                 "MinX", DoubleValue (350.0),
-                                 "MinY", DoubleValue (0.0),
-                                 "DeltaX", DoubleValue (50),
-                                 "DeltaY", DoubleValue (50),
-                                 "GridWidth", UintegerValue (1),
-                                 "LayoutType", StringValue ("RowFirst"));
-  mobility2.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mobility2.Install(c2);
-
-  MobilityHelper mobility3;
-  mobility3.SetPositionAllocator ("ns3::GridPositionAllocator",
-                                 "MinX", DoubleValue (100.0),
-                                 "MinY", DoubleValue (0.0),
-                                 "DeltaX", DoubleValue (50),
-                                 "DeltaY", DoubleValue (50),
-                                 "GridWidth", UintegerValue (5),
-                                 "LayoutType", StringValue ("RowFirst"));
-  mobility3.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mobility3.Install(c3);
-
-  MobilityHelper mobility4;
-  mobility4.SetPositionAllocator ("ns3::GridPositionAllocator",
-                                 "MinX", DoubleValue (100.0),
-                                 "MinY", DoubleValue (650.0),
-                                 "DeltaX", DoubleValue (50),
-                                 "DeltaY", DoubleValue (50),
-                                 "GridWidth", UintegerValue (5),
-                                 "LayoutType", StringValue ("RowFirst"));
-  mobility4.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mobility4.Install(c4);
-
-  //sink is static and represents adhoc metwork edge, e.g., internet gateway
-  MobilityHelper mobility;
-  Ptr<ListPositionAllocator> positionAlloc = CreateObject <ListPositionAllocator>();
-//  positionAlloc ->Add(Vector(0, 325, 0)); // source
-  positionAlloc ->Add(Vector(400, 325, 0)); // sink
-  mobility.SetPositionAllocator(positionAlloc);
-  mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mobility.Install(sinkSrc.Get(1));
-
-  //paramedic acts as a src and moves from location 1 to location 3 through location 2.
-
-   MobilityHelper mobilitySrc;
-  Ptr<ListPositionAllocator> positionAllocSrc = CreateObject <ListPositionAllocator>();
-  positionAllocSrc ->Add(Vector(0, 0, 0)); // source
-  mobilitySrc.SetPositionAllocator(positionAllocSrc);
-  mobilitySrc.SetMobilityModel ("ns3::WaypointMobilityModel",
-                               "InitialPositionIsWaypoint", BooleanValue (true));
-  mobilitySrc.Install(sinkSrc.Get(0));
-
-  Waypoint location1 (LocationTime, Vector(0,0,0));
-  Time nextWaypointTime = LocationTime + Seconds(325/SrcSpeed);
-  Waypoint location21 (nextWaypointTime, Vector(0,325,0));
-  Waypoint location22 (nextWaypointTime + LocationTime, Vector(0,325,0));
-  Time lastWaypointTime = nextWaypointTime + LocationTime + Seconds(325/SrcSpeed);
-  Waypoint location3 (lastWaypointTime, Vector(0,650,0));
-
-  //Add waypoints to the src
-  Ptr<WaypointMobilityModel> srcModel = sinkSrc.Get(0)->GetObject<WaypointMobilityModel> ();
-  srcModel->AddWaypoint(location1);
-  srcModel->AddWaypoint(location21);
-  srcModel->AddWaypoint(location22);
-  srcModel->AddWaypoint(location3);
-
-  //istall gpsr headers to all nodes
-  //gpsr.Install (); // Does this need to be done in here?
 
   //setup applications
   NS_LOG_INFO ("Create Applications.");
@@ -502,7 +522,7 @@ int main (int argc, char *argv[])
   //ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
 
   Ptr<MyApp> app = CreateObject<MyApp> ();
-  app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate ("5Mbps"));
+  app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate (std::to_string (NodeDataRate) + "Mbps"));
   sinkSrc.Get (0)->AddApplication (app);
   app->SetStartTime (Seconds (1.0));
   app->SetStopTime (StopTime);
@@ -511,19 +531,6 @@ int main (int argc, char *argv[])
   Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_mobicom_expr_" + RoutingModel + ".txt");
   ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
 
-
-  Ptr<OutputStreamWrapper> stream2 = asciiTraceHelper.CreateFileStream ("pdrop_mobicom_expr_" + RoutingModel + ".txt");
-  devices.Get (1)->TraceConnectWithoutContext ("PhyRxDrop", MakeBoundCallback (&RxDrop, stream2));
-  //devices.Get (1)->TraceConnectWithoutContext ("PhyRxDrop", MakeCallback (&RxDrop));
-
-  /*
-  V4PingHelper ping (ifcont.GetAddress (1));
-  ping.SetAttribute ("Verbose", BooleanValue (true));
-
-  ApplicationContainer p = ping.Install (sinkSrc.Get (0));
-  p.Start (Seconds (5));
-  p.Stop (StopTime - Seconds (0.001));
-*/
   std::cout <<"src ip="<<ifcont.GetAddress (0, 0)<<" id="<<sinkSrc.Get (0)->GetId() <<"; sink ip="<<ifcont.GetAddress(1, 0)<<" id="<<sinkSrc.Get (1)->GetId() <<std::endl;
 
 
@@ -533,7 +540,7 @@ int main (int argc, char *argv[])
 
 // Trace devices (pcap)
 //  wifiPhy.EnablePcap ("mobicom_expr", devices.Get(0)); //save pcap file for src
-wifiPhy.EnablePcap ("mobicom_expr", devices.Get(1)); //save pcap file for sink
+//wifiPhy.EnablePcap ("mobicom_expr", devices.Get(1)); //save pcap file for sink
 
 
 
@@ -542,11 +549,22 @@ wifiPhy.EnablePcap ("mobicom_expr", devices.Get(1)); //save pcap file for sink
 
   DecideOnNodesFailure (allTransmissionNodes, FailureTime, FailureProb, StopTime); // simulate node failures by moving them far from others
 
-  Simulator::Stop (StopTime);
-  if (EnableNetAnim) {
+  Simulator::Stop (StopTime); // mobicom_expr--orig.cc
+  //if (EnableNetAnim) {
+    // Doesn't seem to work unless it's literally right here. Can't place in an IF statement
     AnimationInterface anim ("mobicom_expr_animation_" + RoutingModel + ".xml");
-  }
+    anim.SkipPacketTracing ();
+  //}
+
+  // Flow monitor
+  // Ptr<FlowMonitor> flowMonitor;
+  // FlowMonitorHelper flowHelper;
+  // flowMonitor = flowHelper.Install(sinkSrc); // Just monitor the src and dest nodes
+
   Simulator::Run ();
+
+  //flowMonitor->SerializeToXmlFile("flow_" + RoutingModel + ".xml", false, true);
+
   Simulator::Destroy ();
   NS_LOG_INFO ("Done.");
 }
