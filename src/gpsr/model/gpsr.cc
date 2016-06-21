@@ -76,30 +76,36 @@ NS_OBJECT_ENSURE_REGISTERED (RoutingProtocol);
 const uint32_t RoutingProtocol::GPSR_PORT = 666;
 
 RoutingProtocol::RoutingProtocol() :
-		HelloInterval(Seconds(1)), MaxQueueLen(64), MaxQueueTime(Seconds(30)), m_queue(
-				MaxQueueLen, MaxQueueTime), HelloIntervalTimer(
-				Timer::CANCEL_ON_DESTROY), PerimeterMode(false), RepulsionMode(
-				0) {
-
-	m_neighbors = PositionTable();
+		HelloInterval(Seconds(1)), 
+		MaxQueueLen(64), 
+		MaxQueueTime(Seconds(30)), 
+		m_queue(MaxQueueLen, MaxQueueTime), 
+		HelloIntervalTimer(Timer::CANCEL_ON_DESTROY),
+		//m_neighbors(PositionTable(HolePosition, HoleRadius)), 
+		PerimeterMode(false), 
+		RepulsionMode(0){
 }
 
 TypeId RoutingProtocol::GetTypeId(void) {
 	static TypeId tid =
 			TypeId("ns3::gpsr::RoutingProtocol").SetParent<Ipv4RoutingProtocol>().AddConstructor<
-					RoutingProtocol>().AddAttribute("HelloInterval",
+					RoutingProtocol>()
+					.AddAttribute("HelloInterval",
 					"HELLO messages emission interval.", TimeValue(Seconds(1)),
 					MakeTimeAccessor(&RoutingProtocol::HelloInterval),
-					MakeTimeChecker()).AddAttribute("LocationServiceName",
+					MakeTimeChecker())
+					.AddAttribute("LocationServiceName",
 					"Indicates wich Location Service is enabled",
 					EnumValue(GPSR_LS_GOD),
 					MakeEnumAccessor(&RoutingProtocol::LocationServiceName),
 					MakeEnumChecker(GPSR_LS_GOD, "GOD",
-					GPSR_LS_RLS, "RLS")).AddAttribute("PerimeterMode",
+					GPSR_LS_RLS, "RLS"))
+					.AddAttribute("PerimeterMode",
 					"Indicates if PerimeterMode is enabled",
 					BooleanValue(false),
 					MakeBooleanAccessor(&RoutingProtocol::PerimeterMode),
-					MakeBooleanChecker()).AddAttribute("RepulsionMode",
+					MakeBooleanChecker())
+					.AddAttribute("RepulsionMode",
 					"Indicates wheteher EGF avoidance is used or not",
 					UintegerValue(0),
 					MakeUintegerAccessor(&RoutingProtocol::RepulsionMode),
@@ -118,6 +124,13 @@ RoutingProtocol::~RoutingProtocol() {
 void RoutingProtocol::DoDispose() {
 	m_ipv4 = 0;
 	Ipv4RoutingProtocol::DoDispose();
+}
+
+void RoutingProtocol::SetHole(Vector holePosition, double holeRadius)
+{
+	m_holePosition = holePosition;
+	m_holeRadius = holeRadius;
+	m_neighbors(m_holePosition, m_holeRadius);
 }
 
 Ptr<LocationService> RoutingProtocol::GetLS() {

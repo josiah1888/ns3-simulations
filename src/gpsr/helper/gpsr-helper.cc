@@ -60,7 +60,7 @@ GpsrHelper::Set (std::string name, const AttributeValue &value)
 
 
 void 
-GpsrHelper::Install (void) const
+GpsrHelper::Install (Vector holePosition, double holeRadius)
 {
   NodeContainer c = NodeContainer::GetGlobal ();
   for (NodeContainer::Iterator i = c.Begin (); i != c.End (); ++i)
@@ -69,6 +69,7 @@ GpsrHelper::Install (void) const
       Ptr<UdpL4Protocol> udp = node->GetObject<UdpL4Protocol> ();
       Ptr<TcpL4Protocol> tcp = node->GetObject<TcpL4Protocol> ();
       Ptr<gpsr::RoutingProtocol> gpsr = node->GetObject<gpsr::RoutingProtocol> ();
+      gpsr->SetHole(holePosition, holeRadius);
       //Ptr<LocationService> lS = CreateObject<GodLocationService>();
       //gpsr->SetLS(lS);
       gpsr->SetUdpDownTarget (udp->GetDownTarget ());

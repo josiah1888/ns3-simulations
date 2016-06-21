@@ -13,10 +13,21 @@ namespace gpsr {
  GPSR position table
  */
 
-PositionTable::PositionTable() {
+ PositionTable::PositionTable() {
+
+ }
+
+PositionTable::PositionTable(Vector holePosition, double holeRadius) {
 	m_txErrorCallback = MakeCallback(&PositionTable::ProcessTxError, this);
 	m_entryLifeTime = Seconds(2); //FIXME fazer isto parametrizavel de acordo com tempo de hello
 
+	m_holePosition = holePosition;
+	m_holeRadius = holeRadius;
+}
+
+PositionTable PositionTable::operator()(Vector holePosition, double holeRadius) {
+	PositionTable p(holePosition, holeRadius);
+	return p;
 }
 
 Time PositionTable::GetEntryUpdateTime(Ipv4Address id) {
@@ -187,25 +198,22 @@ Ipv4Address PositionTable::BestNeighbor(Vector position, Vector nodePos) {
  * \brief Gets next hop according to Electrostatics based Greedy Forwarding
  * \param position the position of the destination node
  * \param nodePos the position of the node that has the packet
- * \return Ipv4Address of the next hop, Ipv4Address::GetZero () if no nighbour was found in Repulsion mode
+ * \return Ipv4Address of the next hop, Ipv4Address::GetZero () if no neighbour was found in Repulsion mode
  */
-Ipv4Address PositionTable::ElectrostaticBestNeighbor(Vector position,
-		Vector nodePos) {
+Ipv4Address PositionTable::ElectrostaticBestNeighbor(Vector position, Vector nodePos) {
 	Purge();
 
 	//FIXME allow parametrization of this parameters
 	double q = 1;
 	double n = 2;
 	//FIXME add hole detection mechanism
-	Vector holeC(200,325,0);//(375, 325, 0); // be aware these values are hardcoded for particular experiment
-	double holeR = 350;//388.909; // be aware these values are hardcoded for particular experiment
 
 	//calculate hole charge ql
-	double b = CalculateDistance(holeC, position);
-	double ql = (q * std::pow(holeR, n + 1)) / (n * std::pow(b + holeR, 2));
+	double b = CalculateDistance(m_holePosition, position);
+	double ql = (q * std::pow(m_holeRadius, n + 1)) / (n * std::pow(b + m_holeRadius, 2));
 
 	double initPotential = -q / CalculateDistance(nodePos, position)
-			+ ql / (std::pow(CalculateDistance(nodePos, holeC), n));
+			+ ql / (std::pow(CalculateDistance(nodePos, m_holePosition), n));
 
 	if (m_table.empty()) {
 		NS_LOG_DEBUG("BestNeighbor table is empty; Position: " << position);
@@ -219,7 +227,7 @@ Ipv4Address PositionTable::ElectrostaticBestNeighbor(Vector position,
 	std::map<Ipv4Address, std::pair<Vector, Time> >::iterator i;
 	for (i = m_table.begin(); !(i == m_table.end()); i++) {
 		double tmpPotential = -q / CalculateDistance(i->second.first, position)
-				+ ql / (std::pow(CalculateDistance(i->second.first, holeC), n));
+				+ ql / (std::pow(CalculateDistance(i->second.first, m_holePosition), n));
 		if (minPotential > tmpPotential) {
 			bestFoundID = i->first;
 			minPotential = tmpPotential;

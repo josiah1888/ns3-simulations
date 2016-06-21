@@ -41,6 +41,7 @@ public:
   RoutingProtocol ();
   virtual ~RoutingProtocol ();
   virtual void DoDispose ();
+  void SetHole(Vector, double);
 
 
   ///\name From Ipv4RoutingProtocol
@@ -126,6 +127,8 @@ private:
   Timer HelloIntervalTimer;
   Timer CheckQueueTimer;
   uint8_t LocationServiceName;
+  Vector m_holePosition;
+  double m_holeRadius;
   PositionTable m_neighbors;
   public:
     bool PerimeterMode;
@@ -137,7 +140,6 @@ private:
 
   IpL4Protocol::DownTargetCallback m_downTargetUdp;
   IpL4Protocol::DownTargetCallback m_downTargetTcp;
-
 };
 }
 }

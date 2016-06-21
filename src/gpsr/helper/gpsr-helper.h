@@ -24,6 +24,7 @@
 #include "ns3/node.h"
 #include "ns3/node-container.h"
 #include "ns3/ipv4-routing-helper.h"
+#include "ns3/vector.h"
 
 namespace ns3 {
 /**
@@ -61,7 +62,7 @@ public:
    */
   void Set (std::string name, const AttributeValue &value);
 
-  void Install (void) const;
+  void Install (Vector, double);
 
 private:
   ObjectFactory m_agentFactory;

@@ -27,7 +27,9 @@ class PositionTable
 {
 public:
   /// c-tor
-  PositionTable ();
+  PositionTable();
+  PositionTable (Vector, double);
+  PositionTable operator()(Vector, double);
 
   /**
    * \brief Gets the last time the entry was updated
@@ -129,7 +131,9 @@ private:
   // Process layer 2 TX error notification
   void ProcessTxError (WifiMacHeader const&);
 
-
+  // New stuff
+  Vector m_holePosition;
+  double m_holeRadius;
 
 
 };

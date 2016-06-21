@@ -220,7 +220,7 @@ RxDrop (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> p)
 */
 
 static void
-SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy, uint16_t RepulsionMode, std::string phyMode) {
+SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy, uint16_t RepulsionMode, std::string phyMode, Vector holePosition, double holeRadius) {
   // Set up WiFi
   WifiHelper wifi;
   
@@ -267,7 +267,7 @@ SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper&
   //internet.SetRoutingHelper (aodv); // has effect on the next Install ()
   internet.Install (nodes);
 
-  gpsr.Install (); // install on all nodes
+  gpsr.Install (holePosition, holeRadius); // install on all nodes
 
   devices = wifi.Install (wifiPhy, wifiMac, nodes);
 }
@@ -316,15 +316,14 @@ SetConstantMobilityGrid(NodeContainer& nodes, double minx, double miny, double d
 }
 
 static void
-SetConstantPositionMobility(Ptr<Node> nodes, Vector v)
+SetConstantPositionMobility(Ptr<Node> node, Vector v)
 {
-  //sink is static and represents adhoc metwork edge, e.g., internet gateway
   MobilityHelper mobility;
   Ptr<ListPositionAllocator> positionAlloc = CreateObject <ListPositionAllocator>();
   positionAlloc ->Add(v);
   mobility.SetPositionAllocator(positionAlloc);
   mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-  mobility.Install(nodes);
+  mobility.Install(node);
 }
 
 static void SetupWaypointMobility(Ptr<Node> node, Vector startingLocation)
@@ -354,7 +353,8 @@ static void SetWaypoints(Ptr<Node> node, std::vector<std::pair<Time, Vector> > w
 
 static void SetupMobility(std::string mobilityScene, NodeContainer& c1, NodeContainer& c2, NodeContainer& c3, NodeContainer& c4, NodeContainer& sinkSrc)
 {
-  Time locationTime = Seconds(10.0);
+  // node container counts: 14, 14, 5, 5, 2
+  Time locationTime = Seconds(120.0);
   double srcSpeed = 2.8;
 
   if (mobilityScene == "static-grid") {
@@ -380,21 +380,9 @@ static void SetupMobility(std::string mobilityScene, NodeContainer& c1, NodeCont
     for (int i = 0; i < c1.GetN (); i++) {
       SetupWaypointMobility(c1.Get (i), Vector(50, 50 * i,0));
       std::vector<std::pair<Time, Vector> > waypoints;
-      waypoints.push_back (std::make_pair(Seconds (3), Vector(50 + 25 * i, 50 + 25 * i, 0)));
+      waypoints.push_back (std::make_pair(Seconds (3), Vector(50 + 22 * i, 150 + 25 * i, 0)));
       SetWaypoints(c1.Get (i), waypoints);
     }
-
-    // Move left wall of nodes to top right ish
-    /*
-    SetupWaypointMobility(sinkSrc.Get(0), Vector(0,0,0));
-    std::vector<std::pair<Time, Vector> > waypoints;
-    waypoints.push_back (std::make_pair(locationTime, Vector(0,0,0)));
-    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,325,0)));
-    waypoints.push_back (std::make_pair(locationTime, Vector(0,325,0)));
-    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(0,0,0)));
-    SetWaypoints(sinkSrc.Get (0), waypoints);
-    */
-
 
     SetupWaypointMobility(sinkSrc.Get(0), Vector(0,0,0));
     std::vector<std::pair<Time, Vector> > waypoints;
@@ -405,6 +393,38 @@ static void SetupMobility(std::string mobilityScene, NodeContainer& c1, NodeCont
     SetWaypoints(sinkSrc.Get (0), waypoints);
 
     SetConstantPositionMobility(sinkSrc.Get(1), Vector(400, 325, 0));
+  } else if (mobilityScene == "dense-mesh") {
+
+    NodeContainer allNodes(c1, c2, c3, c4);
+    int i = 0;
+
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(400, 250, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(200, 300, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(300, 350, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(200, 100, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(300, 150, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(50, 150, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(150, 150, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(100, 250, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(150, 300, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(50, 50, 0));
+    SetConstantPositionMobility(allNodes.Get(i++), Vector(150, 50, 0));
+
+    for (; i < allNodes.GetN (); i++) {
+      SetConstantPositionMobility(allNodes.Get(i), Vector(1000, 1000, 0));
+    }
+
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(100, 50, 0));
+
+    SetupWaypointMobility(sinkSrc.Get(0), Vector(100,100,0));
+    std::vector<std::pair<Time, Vector> > waypoints;
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(50,200,0)));
+    waypoints.push_back (std::make_pair(locationTime, Vector(50,200,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(100,350,0)));
+    waypoints.push_back (std::make_pair(locationTime, Vector(100,350,0)));
+    waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(400,300,0)));
+    waypoints.push_back (std::make_pair(locationTime, Vector(400,300,0)));
+    SetWaypoints(sinkSrc.Get (0), waypoints);
   }
 }
 
@@ -424,6 +444,11 @@ int main (int argc, char *argv[])
   bool EnableNetAnim = false;
   double NodeDataRate = 5.0;
   std::string MobilityScene = "static-grid";
+  
+  // Not sure how much we should implement this
+  Vector holePosition = Vector(1, 2, 0);
+  double holeRadius = 5.0;
+
 
   CommandLine cmd;
   cmd.AddValue ("EnableMonitor", "Enable Flow Monitor", enableFlowMonitor);
@@ -493,7 +518,7 @@ int main (int argc, char *argv[])
 
   if (RoutingModel == "GPSR") {
     std::cout << "using GPSR\n";
-    SetupGPSR(c, devices, wifiPhy, RepulsionMode, phyMode);
+    SetupGPSR(c, devices, wifiPhy, RepulsionMode, phyMode, holePosition, holeRadius);
   } else if (RoutingModel == "HWMP") {
     std::cout << "using HWMP\n";
     SetupHWMP(c, devices, wifiPhy);
@@ -549,12 +574,17 @@ int main (int argc, char *argv[])
 
   DecideOnNodesFailure (allTransmissionNodes, FailureTime, FailureProb, StopTime); // simulate node failures by moving them far from others
 
-  Simulator::Stop (StopTime); // mobicom_expr--orig.cc
-  //if (EnableNetAnim) {
-    // Doesn't seem to work unless it's literally right here. Can't place in an IF statement
-    AnimationInterface anim ("mobicom_expr_animation_" + RoutingModel + ".xml");
-    anim.SkipPacketTracing ();
-  //}
+  Simulator::Stop (StopTime);
+  // Doesn't seem to work unless it's literally right here. Can't place in an IF statement
+  AnimationInterface anim ("mobicom_expr_animation_" + RoutingModel + ".xml");
+  anim.SkipPacketTracing ();
+  // anim.SetStartTime (Seconds (1));
+  // anim.SetStopTime  (Seconds (1.001));
+  // anim.SetStartTime (Seconds (2));
+  // anim.SetStopTime  (Seconds (2.001));
+  // anim.SetStartTime (Seconds (3));
+  // anim.SetStopTime  (Seconds (3.001));
+  
 
   // Flow monitor
   // Ptr<FlowMonitor> flowMonitor;
