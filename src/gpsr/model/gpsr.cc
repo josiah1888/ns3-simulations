@@ -81,7 +81,7 @@ RoutingProtocol::RoutingProtocol() :
 		MaxQueueTime(Seconds(30)), 
 		m_queue(MaxQueueLen, MaxQueueTime), 
 		HelloIntervalTimer(Timer::CANCEL_ON_DESTROY),
-		//m_neighbors(PositionTable(HolePosition, HoleRadius)), 
+		m_neighbors(PositionTable(Vector(-1000, 2, 0), 1)), // Has to be initialized here. This is a dummy value. Maybe try to refactor?
 		PerimeterMode(false), 
 		RepulsionMode(0){
 }

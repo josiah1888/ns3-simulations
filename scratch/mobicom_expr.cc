@@ -64,6 +64,7 @@ using namespace ns3;
  *   clear && ./waf --run "mobicom_expr --RoutingModel=GPSR"
  *   clear && ./waf --run "mobicom_expr --RoutingModel=HWMP"
  *   git add scratch/hwmp-mesh.cc scratch/mobicom_expr.cc
+ *   git ls-files | xargs git add
 */
 
 class MyApp : public Application
@@ -147,7 +148,7 @@ MyApp::SendPacket (void)
 {
   Ptr<Packet> packet = Create<Packet> (m_packetSize);
   m_socket->Send (packet);
-//  std::cout << Simulator::Now ().GetSeconds () << "\t" << "one packet has been sent! PacketSize="<<m_packetSize<<"\n";
+  //std::cout << Simulator::Now ().GetSeconds () << "\t" << "one packet has been sent! PacketSize="<<m_packetSize<<"\n";
   //std::cout << "TxSent\n";
   ScheduleTx ();
 }
@@ -210,61 +211,37 @@ CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
   *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << oldCwnd << "\t" << newCwnd << std::endl;
 }
 
-/*static void
+static void
 RxDrop (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> p)
 {
   NS_LOG_UNCOND ("RxDrop at " << Simulator::Now ().GetSeconds ());
   *stream->GetStream () << "Rx drop at: "<< Simulator::Now ().GetSeconds () << std::endl;
   std::cout << "Rx drop at: "<< Simulator::Now ().GetSeconds () << std::endl;
 }
-*/
 
 static void
 SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy, uint16_t RepulsionMode, std::string phyMode, Vector holePosition, double holeRadius) {
-  // Set up WiFi
-  WifiHelper wifi;
-  
-  // Add a non-QoS upper mac
   NqosWifiMacHelper wifiMac = NqosWifiMacHelper::Default ();
   wifiMac.SetType ("ns3::AdhocWifiMac");
 
-  // Set 802.11g standard
+  WifiHelper wifi;
   wifi.SetStandard (WIFI_PHY_STANDARD_80211g);
-
   wifi.SetRemoteStationManager ("ns3::ConstantRateWifiManager",
                                 "DataMode",StringValue(phyMode),
                                 "ControlMode",StringValue(phyMode));
 
-  //setup routing protocol
-  GpsrHelper gpsr; // --
+  GpsrHelper gpsr;
   gpsr.Set("RepulsionMode", UintegerValue(RepulsionMode));
 
-  // Enable OLSR
-  OlsrHelper olsr; // --
+  OlsrHelper olsr;
   Ipv4StaticRoutingHelper staticRouting;
 
-  Ipv4ListRoutingHelper list; // --
+  Ipv4ListRoutingHelper list;
   list.Add (staticRouting, 0);
   list.Add (olsr, 10);
 
-  //AodvHelper aodv; // shouldn't do anything
-  /* 2. Setup TCP/IP & AODV
-    AodvHelper aodv; // Use default parameters here
-     InternetStackHelper internetStack;
-    internetStack.SetRoutingHelper (aodv);
-    internetStack.Install (*m_nodes);
-    streamsUsed += internetStack.AssignStreams (*m_nodes, streamsUsed);
-    // InternetStack uses m_size more streams
-    NS_TEST_ASSERT_MSG_EQ (streamsUsed, (devices.GetN () * 8) + m_size, "Stream assignment mismatch");
-    streamsUsed += aodv.AssignStreams (*m_nodes, streamsUsed);
-    // AODV uses m_size more streams
-    NS_TEST_ASSERT_MSG_EQ (streamsUsed, ((devices.GetN () * 8) + (2*m_size)), "Stream assignment mismatch");
-*/
-
   InternetStackHelper internet;
-  internet.SetRoutingHelper (gpsr); // --
-  //internet.SetRoutingHelper (list);
-  //internet.SetRoutingHelper (aodv); // has effect on the next Install ()
+  internet.SetRoutingHelper (gpsr);
   internet.Install (nodes);
 
   gpsr.Install (holePosition, holeRadius); // install on all nodes
@@ -277,24 +254,12 @@ SetupHWMP (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper&
   std::string root = "ff:ff:ff:ff:ff:ff";
 
   MeshHelper mesh = MeshHelper::Default();
-
   mesh.SetStackInstaller ("ns3::Dot11sStack");
-
   mesh.SetSpreadInterfaceChannels (MeshHelper::SPREAD_CHANNELS);
-    
-  //mesh.SetMacType ("RandomStart", TimeValue (Seconds (.01))); // Will this cause a bias in the simulation?
-  // Set number of interfaces - default is single-interface mesh point
   mesh.SetNumberOfInterfaces (1);
-  // Install protocols and return container if MeshPointDevices
 
   InternetStackHelper internetStack;
   internetStack.Install (nodes);
-  
-  /*
-  Ipv4AddressHelper address;
-  address.SetBase ("10.1.1.0", "255.255.255.0");
-  interfaces = address.Assign (meshDevices);
-  */
 
   devices = mesh.Install (wifiPhy, nodes);
 }
@@ -346,18 +311,22 @@ static void SetWaypoints(Ptr<Node> node, std::vector<std::pair<Time, Vector> > w
     elapsed += waypoint.first;
     Waypoint w (elapsed, waypoint.second);
     model->AddWaypoint(w);
-
-    //std::cout << "time: " << elapsed.GetSeconds () << "\n";
   }
 }
 
-static void SetupMobility(std::string mobilityScene, NodeContainer& c1, NodeContainer& c2, NodeContainer& c3, NodeContainer& c4, NodeContainer& sinkSrc)
+static void SetupMobility(std::string mobilityScene, 
+NodeContainer& c1, NodeContainer& c2, NodeContainer& c3, NodeContainer& c4, NodeContainer& sinkSrc,
+Vector& holePosition, double& holeRadius
+)
 {
   // node container counts: 14, 14, 5, 5, 2
   Time locationTime = Seconds(120.0);
   double srcSpeed = 2.8;
 
   if (mobilityScene == "static-grid") {
+    holePosition = Vector(200, 350, 0);
+    holeRadius = 150;
+
     SetConstantMobilityGrid(c1, 50, 0, 50, 50, 1);
     SetConstantMobilityGrid(c2, 350, 0, 50, 50, 1);
     SetConstantMobilityGrid(c3, 100, 0, 50, 50, 5);
@@ -446,7 +415,7 @@ int main (int argc, char *argv[])
   std::string MobilityScene = "static-grid";
   
   // Not sure how much we should implement this
-  Vector holePosition = Vector(1, 2, 0);
+  Vector holePosition = Vector(-1000, 2, 0);
   double holeRadius = 5.0;
 
 
@@ -462,7 +431,7 @@ int main (int argc, char *argv[])
   cmd.AddValue ("RoutingModel", "Routing algorithm to use. Can be 'HWMP' or 'GPSR'", RoutingModel);
   cmd.AddValue ("EnableNetAnim", "Enable simulation recording for NetAnim", EnableNetAnim);
   cmd.AddValue ("NodeDataRate", "Data rate for nodes", NodeDataRate);
-  cmd.AddValue ("MobilityScene", "Which mobility scene to use. Can be 'static-grid' or ...", MobilityScene);
+  cmd.AddValue ("MobilityScene", "Which mobility scene to use of ['static-grid', 'mobile-nodes', 'dense-mesh']", MobilityScene);
   cmd.Parse (argc, argv);
 
 //
@@ -515,6 +484,7 @@ int main (int argc, char *argv[])
 
 
   NetDeviceContainer devices;
+  // todo: should probably return NetDeviceContainer devices from setup methods
 
   if (RoutingModel == "GPSR") {
     std::cout << "using GPSR\n";
@@ -530,8 +500,9 @@ int main (int argc, char *argv[])
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer ifcont = ipv4.Assign (devices);
 
-  SetupMobility(MobilityScene, c1, c2, c3, c4, sinkSrc);
+  SetupMobility(MobilityScene, c1, c2, c3, c4, sinkSrc, holePosition, holeRadius);
 
+  std::cout << "hole pos: " << holePosition << " hole radius: " << holeRadius << std::endl;
 
   //setup applications
   NS_LOG_INFO ("Create Applications.");
@@ -544,7 +515,7 @@ int main (int argc, char *argv[])
   sinkApps.Stop (StopTime);
 
   Ptr<Socket> ns3TcpSocket = Socket::CreateSocket (sinkSrc.Get (0), TcpSocketFactory::GetTypeId ());
-  //ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
+  // ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
 
   Ptr<MyApp> app = CreateObject<MyApp> ();
   app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate (std::to_string (NodeDataRate) + "Mbps"));
@@ -556,44 +527,46 @@ int main (int argc, char *argv[])
   Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_mobicom_expr_" + RoutingModel + ".txt");
   ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
 
+  Ptr<OutputStreamWrapper> stream2 = asciiTraceHelper.CreateFileStream ("pdrop_mobicom_expr_" + RoutingModel + ".txt");
+  devices.Get (1)->TraceConnectWithoutContext ("PhyRxDrop", MakeBoundCallback (&RxDrop, stream2));
+
   std::cout <<"src ip="<<ifcont.GetAddress (0, 0)<<" id="<<sinkSrc.Get (0)->GetId() <<"; sink ip="<<ifcont.GetAddress(1, 0)<<" id="<<sinkSrc.Get (1)->GetId() <<std::endl;
 
 
   //log only src movements
   Config::Connect ("/NodeList/38/$ns3::MobilityModel/CourseChange",
-                     MakeCallback (&CourseChange));
+                      MakeCallback (&CourseChange));
 
-// Trace devices (pcap)
-//  wifiPhy.EnablePcap ("mobicom_expr", devices.Get(0)); //save pcap file for src
-//wifiPhy.EnablePcap ("mobicom_expr", devices.Get(1)); //save pcap file for sink
+  // Trace devices (pcap)
+  wifiPhy.EnablePcap ("mobicom_expr_src_" + RoutingModel + ".pcap", devices.Get(0)); //save pcap file for src
+  wifiPhy.EnablePcap ("mobicom_expr_sink_" + RoutingModel + ".pcap", devices.Get(1)); //save pcap file for sink
 
-
-
-// Now, do the actual simulation.
+  // Now, do the actual simulation.
   NS_LOG_INFO ("Run Simulation.");
 
   DecideOnNodesFailure (allTransmissionNodes, FailureTime, FailureProb, StopTime); // simulate node failures by moving them far from others
 
   Simulator::Stop (StopTime);
   // Doesn't seem to work unless it's literally right here. Can't place in an IF statement
+
+  /* Animation */
+
+  // Gives SIGSEGV
+  // NodeContainer holeNodeContainer;
+  // holeNodeContainer.Create(1);
+  // SetConstantPositionMobility(holeNodeContainer.Get (0), holePosition);
+
   AnimationInterface anim ("mobicom_expr_animation_" + RoutingModel + ".xml");
   anim.SkipPacketTracing ();
-  // anim.SetStartTime (Seconds (1));
-  // anim.SetStopTime  (Seconds (1.001));
-  // anim.SetStartTime (Seconds (2));
-  // anim.SetStopTime  (Seconds (2.001));
-  // anim.SetStartTime (Seconds (3));
-  // anim.SetStopTime  (Seconds (3.001));
-  
+  anim.UpdateNodeColor (sinkSrc.Get (0), 0, 255, 0);
+  anim.UpdateNodeSize (sinkSrc.Get (0)-> GetId(), 20, 20);
+  anim.UpdateNodeColor (sinkSrc.Get (1), 0, 0, 255);
+  anim.UpdateNodeSize (sinkSrc.Get (1)-> GetId(), 20, 20);
+  //anim.UpdateNodeColor (holeNodeContainer.Get (0), 0, 0, 255);
 
-  // Flow monitor
-  // Ptr<FlowMonitor> flowMonitor;
-  // FlowMonitorHelper flowHelper;
-  // flowMonitor = flowHelper.Install(sinkSrc); // Just monitor the src and dest nodes
+  /* End Animation */
 
   Simulator::Run ();
-
-  //flowMonitor->SerializeToXmlFile("flow_" + RoutingModel + ".xml", false, true);
 
   Simulator::Destroy ();
   NS_LOG_INFO ("Done.");

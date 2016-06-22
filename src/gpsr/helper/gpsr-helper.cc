@@ -60,7 +60,7 @@ GpsrHelper::Set (std::string name, const AttributeValue &value)
 
 
 void 
-GpsrHelper::Install (Vector holePosition, double holeRadius)
+GpsrHelper::Install (Vector holePosition, double holeRadius) const
 {
   NodeContainer c = NodeContainer::GetGlobal ();
   for (NodeContainer::Iterator i = c.Begin (); i != c.End (); ++i)

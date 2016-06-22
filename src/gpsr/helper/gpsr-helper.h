@@ -62,7 +62,7 @@ public:
    */
   void Set (std::string name, const AttributeValue &value);
 
-  void Install (Vector, double);
+  void Install (Vector, double) const;
 
 private:
   ObjectFactory m_agentFactory;
