@@ -1,0 +1,37 @@
+echo "Cleaning"
+rm -rf output
+
+echo "Starting scale simulations simulations..."
+
+makeDirs=true #false
+
+for algorithm in 'HWMP' 'GPSR'; do
+    $makeDirs && mkdir "output/$algorithm"
+    for mobilityScene in 'full-grid' 'city-block'; do
+        $makeDirs && mkdir "output/$algorithm/$mobilityScene"
+        for variation in 'scale' 'density' 'failure'; do
+            $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation"
+            for trial in 1 2 3 4 5 6 7 8 9 10; do
+                $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation/trial$trial"
+
+                if [ $variation == 'scale' ]; then
+                    nNodes="$(( ($trial + 1) * ($trial + 1) ))" 
+                    variationArg="NNodes=$nNodes"
+                fi
+
+                if [ $variation == 'density' ]; then
+                    scaleFactor="$((1 + $trial * 2))" 
+                    variationArg="Scale=$scaleFactor"
+                fi
+
+                if [ $variation == 'failure' ]; then
+                    failureProb=$(bc -l <<< "1.0/10.0 + $trial/20.0")
+                    variationArg="FailureProb=$failureProb"
+                fi
+
+                echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg"
+                ./waf --cwd="output/$algorithm/$mobilityScene/$variation/$trial" --run "mobicom_expr --RoutingModel=$algorithm --StopTime=600 --Protocol=tcp --MobilityScene=$mobilityScene --$variationArg"
+            done
+        done
+    done
+done
