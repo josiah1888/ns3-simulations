@@ -30,7 +30,7 @@ for algorithm in 'HWMP' 'GPSR'; do
                 fi
 
                 echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg"
-                ./waf --cwd="output/$algorithm/$mobilityScene/$variation/$trial" --run "mobicom_expr --RoutingModel=$algorithm --StopTime=600 --Protocol=tcp --MobilityScene=$mobilityScene --$variationArg"
+                r./waf --cwd="output/$algorithm/$mobilityScene/$variation/$trial" --run "mobicom_expr --RoutingModel=$algorithm --StopTime=600 --Protocol=tcp --MobilityScene=$mobilityScene --$variationArg"
             done
         done
     done
