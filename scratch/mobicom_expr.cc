@@ -33,10 +33,14 @@
 #include "ns3/flow-monitor.h"
 #include <vector>
 #include <utility>
+#include <climits>
+#include <cmath>
 
 //#include "myapp.h"
 
 NS_LOG_COMPONENT_DEFINE ("MyExpr");
+
+#define MIN_NODES 38
 
 using namespace ns3;
 
@@ -212,14 +216,6 @@ CwndChange (Ptr<OutputStreamWrapper> stream, uint32_t oldCwnd, uint32_t newCwnd)
 }
 
 static void
-RxDrop (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> p)
-{
-  NS_LOG_UNCOND ("RxDrop at " << Simulator::Now ().GetSeconds ());
-  *stream->GetStream () << "Rx drop at: "<< Simulator::Now ().GetSeconds () << std::endl;
-  std::cout << "Rx drop at: "<< Simulator::Now ().GetSeconds () << std::endl;
-}
-
-static void
 SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy, uint16_t RepulsionMode, std::string phyMode, Vector holePosition, double holeRadius) {
   NqosWifiMacHelper wifiMac = NqosWifiMacHelper::Default ();
   wifiMac.SetType ("ns3::AdhocWifiMac");
@@ -249,7 +245,7 @@ SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper&
   devices = wifi.Install (wifiPhy, wifiMac, nodes);
 }
 
-static void
+static MeshHelper
 SetupHWMP (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy) {
   std::string root = "ff:ff:ff:ff:ff:ff";
 
@@ -262,6 +258,8 @@ SetupHWMP (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper&
   internetStack.Install (nodes);
 
   devices = mesh.Install (wifiPhy, nodes);
+
+  return mesh;
 }
 
 
@@ -316,7 +314,7 @@ static void SetWaypoints(Ptr<Node> node, std::vector<std::pair<Time, Vector> > w
 
 static void SetupMobility(std::string mobilityScene, 
 NodeContainer& c1, NodeContainer& c2, NodeContainer& c3, NodeContainer& c4, NodeContainer& sinkSrc,
-Vector& holePosition, double& holeRadius
+Vector& holePosition, double& holeRadius, double scale, int nNodes
 )
 {
   // node container counts: 14, 14, 5, 5, 2
@@ -394,6 +392,82 @@ Vector& holePosition, double& holeRadius
     waypoints.push_back (std::make_pair(Seconds (325/srcSpeed), Vector(400,300,0)));
     waypoints.push_back (std::make_pair(locationTime, Vector(400,300,0)));
     SetWaypoints(sinkSrc.Get (0), waypoints);
+  } else if (mobilityScene == "city-block") {
+/*
+   100m  |
+         |
+   100m  |   292m
+_______ x x x x x x x
+        x           x
+        x           x 261m
+        x           x
+        x           x
+        x x x x x x x
+*/
+
+    NodeContainer allNodes(c1, c2, c3, c4);
+
+    double a = 292 * scale, b = 261 * scale, offset = 100 * scale;
+    double perimeter = 2 * (a + b);
+
+    holePosition = Vector(offset + a / 2, offset + b / 2, 0);
+    holeRadius = (a + b) / 4;
+
+    for (double i = 0; i < allNodes.GetN (); i++) {
+      double currentPosition = i / (double)allNodes.GetN () * perimeter;
+
+      if (currentPosition < a) {
+        SetConstantPositionMobility(allNodes.Get(i), Vector(offset + currentPosition, offset, 0));
+      } else if (currentPosition < a + b) {
+        SetConstantPositionMobility(allNodes.Get(i), Vector(offset + a, offset + currentPosition - a, 0));
+      } else if (currentPosition < 2 * a + b) {
+        SetConstantPositionMobility(allNodes.Get(i), Vector(offset + 2 * a - currentPosition + b, offset + b, 0));
+      } else {
+        SetConstantPositionMobility(allNodes.Get(i), Vector(offset, offset + 2 * (a + b) - currentPosition, 0));
+      }
+    }
+
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(offset + 50, offset + 50, 0));
+
+    Vector current = Vector(offset + a + 100 , offset + 2.0 / 3.0 * b, 0), next;
+    SetupWaypointMobility(sinkSrc.Get(0), current);
+    std::vector<std::pair<Time, Vector> > waypoints;
+
+    next = Vector(offset + a - 100, offset + b - 100 ,0);
+    waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
+    waypoints.push_back (std::make_pair(locationTime, next));
+    
+    current = next;
+    next = Vector(offset + 2.0 / 3.0 * a, offset + b + 100,0);
+    waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
+    waypoints.push_back (std::make_pair(locationTime, next));
+    
+    SetWaypoints(sinkSrc.Get (0), waypoints);
+
+    std::cout << "Space between nodes: " << 1.0 / (double)allNodes.GetN () * perimeter << "m" << std::endl;
+  } else if (mobilityScene == "full-grid") {
+
+    NodeContainer allNodes(c1, c2, c3, c4);
+    NodeContainer gridNodes;
+    double offset = 100 * scale;
+    double spaceBetweenNodes = 50 * scale;
+    double nColumns = sqrt(nNodes);
+    
+    if (nColumns * nColumns != nNodes) {
+      std::cout << "To make a square grid, let nNodes be a perfect square" << std::endl;
+    }
+    
+    for (int i = 0; i < allNodes.GetN (); i++) {
+      if (i < nColumns * nColumns) {
+        gridNodes.Add (allNodes.Get (i));
+      } else {
+        SetConstantPositionMobility(allNodes.Get (i), Vector(0, offset + nColumns * spaceBetweenNodes * 1.5, 0));
+      }
+    }
+
+    SetConstantMobilityGrid(gridNodes, offset, offset, spaceBetweenNodes, spaceBetweenNodes, nColumns);
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(offset - 50, offset - 50, 0));
+    SetConstantPositionMobility(sinkSrc.Get(0), Vector(offset + spaceBetweenNodes * (nColumns - 1) + 50, offset + spaceBetweenNodes * (nColumns - 1) + 50, 0));
   }
 }
 
@@ -413,6 +487,9 @@ int main (int argc, char *argv[])
   bool EnableNetAnim = false;
   double NodeDataRate = 5.0;
   std::string MobilityScene = "static-grid";
+  double scale = 1;
+  int nNodes = MIN_NODES;
+  std::string protocol = "tcp";
   
   // Not sure how much we should implement this
   Vector holePosition = Vector(-1000, 2, 0);
@@ -431,8 +508,13 @@ int main (int argc, char *argv[])
   cmd.AddValue ("RoutingModel", "Routing algorithm to use. Can be 'HWMP' or 'GPSR'", RoutingModel);
   cmd.AddValue ("EnableNetAnim", "Enable simulation recording for NetAnim", EnableNetAnim);
   cmd.AddValue ("NodeDataRate", "Data rate for nodes", NodeDataRate);
+  cmd.AddValue ("NNodes", "Number of nodes. Min=" + std::to_string(MIN_NODES), nNodes);
+  cmd.AddValue ("Scale", "Scale of the scene. Min=1. (only for MobilityScene=city-block)", scale);
+  cmd.AddValue ("Protocol", "Which protocol to use: udp or tcp", protocol);
   cmd.AddValue ("MobilityScene", "Which mobility scene to use of ['static-grid', 'mobile-nodes', 'dense-mesh']", MobilityScene);
   cmd.Parse (argc, argv);
+
+  scale = scale < 1 ? 1 : scale;
 
 //
 // Explicitly create the nodes required by the topology (shown above).
@@ -445,7 +527,7 @@ int main (int argc, char *argv[])
   NodeContainer c3;
   c3.Create(5);
   NodeContainer c4;
-  c4.Create(5);
+  c4.Create(nNodes > MIN_NODES ? 5 + nNodes - MIN_NODES : 5);
   
 
   NodeContainer allTransmissionNodes;
@@ -484,6 +566,7 @@ int main (int argc, char *argv[])
 
 
   NetDeviceContainer devices;
+  MeshHelper mesh;
   // todo: should probably return NetDeviceContainer devices from setup methods
 
   if (RoutingModel == "GPSR") {
@@ -491,7 +574,7 @@ int main (int argc, char *argv[])
     SetupGPSR(c, devices, wifiPhy, RepulsionMode, phyMode, holePosition, holeRadius);
   } else if (RoutingModel == "HWMP") {
     std::cout << "using HWMP\n";
-    SetupHWMP(c, devices, wifiPhy);
+    mesh = SetupHWMP(c, devices, wifiPhy);
   }
 
   // Set up Addresses
@@ -500,46 +583,75 @@ int main (int argc, char *argv[])
   ipv4.SetBase ("10.1.1.0", "255.255.255.0");
   Ipv4InterfaceContainer ifcont = ipv4.Assign (devices);
 
-  SetupMobility(MobilityScene, c1, c2, c3, c4, sinkSrc, holePosition, holeRadius);
+  SetupMobility(MobilityScene, c1, c2, c3, c4, sinkSrc, holePosition, holeRadius, scale, nNodes);
 
   std::cout << "hole pos: " << holePosition << " hole radius: " << holeRadius << std::endl;
 
   //setup applications
   NS_LOG_INFO ("Create Applications.");
 
-  uint16_t sinkPort = 8080;
-  Address sinkAddress (InetSocketAddress (ifcont.GetAddress (1), sinkPort));
-  PacketSinkHelper packetSinkHelper ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), sinkPort));
-  ApplicationContainer sinkApps = packetSinkHelper.Install (sinkSrc.Get (1));
-  sinkApps.Start (Seconds (0.0));
-  sinkApps.Stop (StopTime);
 
-  Ptr<Socket> ns3TcpSocket = Socket::CreateSocket (sinkSrc.Get (0), TcpSocketFactory::GetTypeId ());
-  // ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
+  if (protocol == "tcp") {
 
-  Ptr<MyApp> app = CreateObject<MyApp> ();
-  app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate (std::to_string (NodeDataRate) + "Mbps"));
-  sinkSrc.Get (0)->AddApplication (app);
-  app->SetStartTime (Seconds (1.0));
-  app->SetStopTime (StopTime);
+    std::cout << "Using tcp protocol" << std::endl;
 
-  AsciiTraceHelper asciiTraceHelper;
-  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_mobicom_expr_" + RoutingModel + ".txt");
-  ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
+    uint16_t sinkPort = 8080;
+    Address sinkAddress (InetSocketAddress (ifcont.GetAddress (1), sinkPort));
+    PacketSinkHelper packetSinkHelper ("ns3::TcpSocketFactory", InetSocketAddress (Ipv4Address::GetAny (), sinkPort));
+    ApplicationContainer sinkApps = packetSinkHelper.Install (sinkSrc.Get (1));
+    sinkApps.Start (Seconds (0.0));
+    sinkApps.Stop (StopTime);
 
-  Ptr<OutputStreamWrapper> stream2 = asciiTraceHelper.CreateFileStream ("pdrop_mobicom_expr_" + RoutingModel + ".txt");
-  devices.Get (1)->TraceConnectWithoutContext ("PhyRxDrop", MakeBoundCallback (&RxDrop, stream2));
+    Ptr<Socket> ns3TcpSocket = Socket::CreateSocket (sinkSrc.Get (0), TcpSocketFactory::GetTypeId ());
+    // ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
+
+    Ptr<MyApp> app = CreateObject<MyApp> ();
+    app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate (std::to_string (NodeDataRate) + "Mbps"));
+    sinkSrc.Get (0)->AddApplication (app);
+    app->SetStartTime (Seconds (1.0));
+    app->SetStopTime (StopTime);
+
+    AsciiTraceHelper asciiTraceHelper;
+    Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_mobicom_expr_" + RoutingModel + ".txt");
+    ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
+  } else {
+
+    std::cout << "Using udp protocol" << std::endl;
+
+    UdpServerHelper server (9);
+    ApplicationContainer serverApp = server.Install (sinkSrc.Get (0));
+    serverApp.Start (Seconds (1.0));
+    serverApp.Stop (StopTime);
+
+    UdpClientHelper client (ifcont.GetAddress (0), 9);
+    client.SetAttribute ("MaxPackets", UintegerValue ((uint32_t)(StopTime.GetSeconds () * pow(2, 20) * 5)));
+    client.SetAttribute ("Interval", TimeValue (Seconds (0.01))); // 5Mbps =0.0001953125
+    client.SetAttribute ("PacketSize", UintegerValue (32));
+
+
+      // client.SetAttribute ("MaxPackets", UintegerValue ((uint32_t)(m_totalTime*(1/m_packetInterval))));
+      //client.SetAttribute ("Interval", TimeValue (Seconds (m_packetInterval)));
+      //client.SetAttribute ("PacketSize", UintegerValue (m_packetSize));
+
+    ApplicationContainer clientApp = client.Install(sinkSrc.Get(1));
+    clientApp.Start (Seconds (1.0));
+    clientApp.Stop (StopTime);  
+
+    LogComponentEnable ("UdpClient", LOG_LEVEL_INFO);
+    LogComponentEnable ("UdpServer", LOG_LEVEL_INFO);
+  }
 
   std::cout <<"src ip="<<ifcont.GetAddress (0, 0)<<" id="<<sinkSrc.Get (0)->GetId() <<"; sink ip="<<ifcont.GetAddress(1, 0)<<" id="<<sinkSrc.Get (1)->GetId() <<std::endl;
 
-
   //log only src movements
-  Config::Connect ("/NodeList/38/$ns3::MobilityModel/CourseChange",
+  Config::Connect ("/NodeList/" + std::to_string(sinkSrc.Get (0) ->GetId ()) + "/$ns3::MobilityModel/CourseChange",
                       MakeCallback (&CourseChange));
 
   // Trace devices (pcap)
+  wifiPhy.EnablePcapAll ("mp-");
   wifiPhy.EnablePcap ("mobicom_expr_src_" + RoutingModel + ".pcap", devices.Get(0)); //save pcap file for src
   wifiPhy.EnablePcap ("mobicom_expr_sink_" + RoutingModel + ".pcap", devices.Get(1)); //save pcap file for sink
+    // should we really trace throughput for the sink? It should only send ack messages
 
   // Now, do the actual simulation.
   NS_LOG_INFO ("Run Simulation.");
@@ -559,14 +671,36 @@ int main (int argc, char *argv[])
   AnimationInterface anim ("mobicom_expr_animation_" + RoutingModel + ".xml");
   anim.SkipPacketTracing ();
   anim.UpdateNodeColor (sinkSrc.Get (0), 0, 255, 0);
-  anim.UpdateNodeSize (sinkSrc.Get (0)-> GetId(), 20, 20);
+  anim.UpdateNodeSize (sinkSrc.Get (0) -> GetId(), 20 * scale, 20 * scale);
   anim.UpdateNodeColor (sinkSrc.Get (1), 0, 0, 255);
-  anim.UpdateNodeSize (sinkSrc.Get (1)-> GetId(), 20, 20);
+  anim.UpdateNodeSize (sinkSrc.Get (1) -> GetId(), 20 * scale, 20 * scale);
   //anim.UpdateNodeColor (holeNodeContainer.Get (0), 0, 0, 255);
+  anim.SetMaxPktsPerTraceFile (ULLONG_MAX);
+
+  if (MobilityScene == "city-block") {
+    anim.SetBackgroundImage ("/Users/muitprogram/Google Drive/joplin-city-block-cropped.jpg",
+                          100.0 * scale, 100.0 * scale, scale / 2, scale / 2, 1);
+  }
 
   /* End Animation */
 
   Simulator::Run ();
+
+  if (RoutingModel == "HWMP") {
+    std::ostringstream os;
+    os << "mp-report.xml";
+    std::ofstream of;
+    of.open (os.str ().c_str ());
+    if (!of.is_open ())
+    {
+      std::cerr << "Error: Can't open file " << os.str () << "\n";
+    }
+    mesh.Report (devices.Get (0), of);
+    of << "\n\n\n<NextDevice>";
+    mesh.Report (devices.Get (1), of);
+    of << "</NextDevice>\n";
+    of.close ();
+  }
 
   Simulator::Destroy ();
   NS_LOG_INFO ("Done.");

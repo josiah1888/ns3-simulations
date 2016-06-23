@@ -301,7 +301,6 @@ MeshTest::Report ()
         }
       mesh.Report (*i, of);
       of.close ();
-      break;
     }
 }
 
