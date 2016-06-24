@@ -245,7 +245,7 @@ SetupGPSR (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper&
   devices = wifi.Install (wifiPhy, wifiMac, nodes);
 }
 
-static MeshHelper
+static void
 SetupHWMP (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper& wifiPhy) {
   std::string root = "ff:ff:ff:ff:ff:ff";
 
@@ -258,8 +258,6 @@ SetupHWMP (NodeContainer& nodes, NetDeviceContainer& devices, YansWifiPhyHelper&
   internetStack.Install (nodes);
 
   devices = mesh.Install (wifiPhy, nodes);
-
-  return mesh;
 }
 
 
@@ -467,7 +465,22 @@ _______ x x x x x x x
 
     SetConstantMobilityGrid(gridNodes, offset, offset, spaceBetweenNodes, spaceBetweenNodes, nColumns);
     SetConstantPositionMobility(sinkSrc.Get(1), Vector(offset - 50, offset - 50, 0));
-    SetConstantPositionMobility(sinkSrc.Get(0), Vector(offset + spaceBetweenNodes * (nColumns - 1) + 50, offset + spaceBetweenNodes * (nColumns - 1) + 50, 0));
+    //SetConstantPositionMobility(sinkSrc.Get(0), Vector(offset + spaceBetweenNodes * (nColumns - 1) + 50, offset + spaceBetweenNodes * (nColumns - 1) + 50, 0));
+
+    Vector current = Vector(offset + spaceBetweenNodes * (nColumns - 1) + 100 , offset + 2.0 / 3.0 * spaceBetweenNodes * (nColumns - 1), 0), next;
+    SetupWaypointMobility(sinkSrc.Get(0), current);
+    std::vector<std::pair<Time, Vector> > waypoints;
+
+    next = Vector(offset + spaceBetweenNodes * (nColumns - 1) - 100, offset + spaceBetweenNodes * (nColumns - 1) - 100 ,0);
+    waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
+    waypoints.push_back (std::make_pair(locationTime, next));
+    
+    current = next;
+    next = Vector(offset + 2.0 / 3.0 * spaceBetweenNodes * (nColumns - 1), offset + spaceBetweenNodes * (nColumns - 1) + 100,0);
+    waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
+    waypoints.push_back (std::make_pair(locationTime, next));
+    
+    SetWaypoints(sinkSrc.Get (0), waypoints);
   }
 }
 
@@ -521,13 +534,13 @@ int main (int argc, char *argv[])
 //
   NS_LOG_INFO ("Create nodes.");
   NodeContainer c1; // sink and source
-  c1.Create(14);
+  c1.Create (nNodes);
   NodeContainer c2;
-  c2.Create(14);
+  //c2.Create(14);
   NodeContainer c3;
-  c3.Create(5);
+  //c3.Create(5);
   NodeContainer c4;
-  c4.Create(nNodes > MIN_NODES ? 5 + nNodes - MIN_NODES : 5);
+  //c4.Create(nNodes > MIN_NODES ? 5 + nNodes - MIN_NODES : 5);
   
 
   NodeContainer allTransmissionNodes;
@@ -574,7 +587,7 @@ int main (int argc, char *argv[])
     SetupGPSR(c, devices, wifiPhy, RepulsionMode, phyMode, holePosition, holeRadius);
   } else if (RoutingModel == "HWMP") {
     std::cout << "using HWMP\n";
-    mesh = SetupHWMP(c, devices, wifiPhy);
+    SetupHWMP(c, devices, wifiPhy);
   }
 
   // Set up Addresses
@@ -612,7 +625,7 @@ int main (int argc, char *argv[])
     app->SetStopTime (StopTime);
 
     AsciiTraceHelper asciiTraceHelper;
-    Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_mobicom_expr_" + RoutingModel + ".txt");
+    Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("cwnd_" + RoutingModel + ".txt");
     ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeBoundCallback (&CwndChange, stream));
   } else {
 
@@ -686,21 +699,21 @@ int main (int argc, char *argv[])
 
   Simulator::Run ();
 
-  if (RoutingModel == "HWMP") {
-    std::ostringstream os;
-    os << "mp-report.xml";
-    std::ofstream of;
-    of.open (os.str ().c_str ());
-    if (!of.is_open ())
-    {
-      std::cerr << "Error: Can't open file " << os.str () << "\n";
-    }
-    mesh.Report (devices.Get (0), of);
-    of << "\n\n\n<NextDevice>";
-    mesh.Report (devices.Get (1), of);
-    of << "</NextDevice>\n";
-    of.close ();
-  }
+  // if (RoutingModel == "HWMP") {
+  //   std::ostringstream os;
+  //   os << "mp-report.xml";
+  //   std::ofstream of;
+  //   of.open (os.str ().c_str ());
+  //   if (!of.is_open ())
+  //   {
+  //     std::cerr << "Error: Can't open file " << os.str () << "\n";
+  //   }
+  //   mesh.Report (devices.Get (0), of);
+  //   of << "\n\n\n<NextDevice>";
+  //   mesh.Report (devices.Get (1), of);
+  //   of << "</NextDevice>\n";
+  //   of.close ();
+  // }
 
   Simulator::Destroy ();
   NS_LOG_INFO ("Done.");

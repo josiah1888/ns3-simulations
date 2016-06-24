@@ -3,7 +3,9 @@ rm -rf output
 
 echo "Starting scale simulations simulations..."
 
-makeDirs=true #false
+makeDirs=true
+stopTime='600'
+mkdir output
 
 for algorithm in 'HWMP' 'GPSR'; do
     $makeDirs && mkdir "output/$algorithm"
@@ -30,7 +32,16 @@ for algorithm in 'HWMP' 'GPSR'; do
                 fi
 
                 echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg"
-                r./waf --cwd="output/$algorithm/$mobilityScene/$variation/$trial" --run "mobicom_expr --RoutingModel=$algorithm --StopTime=600 --Protocol=tcp --MobilityScene=$mobilityScene --$variationArg"
+                ./waf --cwd="output/$algorithm/$mobilityScene/$variation/trial$trial" --run "mobicom_expr --NodeDataRate=5 --RoutingModel=$algorithm --StopTime=$stopTime --Protocol=tcp --MobilityScene=$mobilityScene --$variationArg" > "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt"
+
+                echo "Analyzing data"
+                srcId=$(pcregrep -o1 'id=([0-9]+);' "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt")
+                srcFile=$(cd "output/$algorithm/$mobilityScene/$variation/trial$trial" && ls mp--$srcId*)
+                tshark -r "output/$algorithm/$mobilityScene/$variation/trial$trial/$srcFile" -q -z 'io,stat,1,(tcp || llc)' > "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt"
+                pcregrep -o1 -o4 '^[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9]+)' "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt" | tail -n +2 > "output/$algorithm/$mobilityScene/$variation/trial$trial/io-data.txt"
+
+                cd "output/$algorithm/$mobilityScene/$variation/trial$trial" && gnuplot "../../../../../plot-cwnd-$algorithm"
+                cd ../../../../../
             done
         done
     done
