@@ -405,7 +405,11 @@ _______ x x x x x x x
 
     NodeContainer allNodes(c1, c2, c3, c4);
 
-    double a = 292 * scale, b = 261 * scale, offset = 100 * scale;
+    if (nNodes < 16) {
+      scale = scale * (nNodes / 16.0);
+    }
+
+    double a = 292 * scale, b = 261 * scale , offset = 100 * scale;
     double perimeter = 2 * (a + b);
 
     holePosition = Vector(offset + a / 2, offset + b / 2, 0);
@@ -425,18 +429,18 @@ _______ x x x x x x x
       }
     }
 
-    SetConstantPositionMobility(sinkSrc.Get(1), Vector(offset + 50, offset + 50, 0));
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(offset + .2 * a, offset + .2 * b, 0));
 
-    Vector current = Vector(offset + a + 100 , offset + 2.0 / 3.0 * b, 0), next;
+    Vector current = Vector(offset * 1.5 + a, offset + 2.0 / 3.0 * b, 0), next;
     SetupWaypointMobility(sinkSrc.Get(0), current);
     std::vector<std::pair<Time, Vector> > waypoints;
 
-    next = Vector(offset + a - 100, offset + b - 100 ,0);
+    next = Vector(offset * .5 + a, offset * .5 + b ,0);
     waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
     waypoints.push_back (std::make_pair(locationTime, next));
     
     current = next;
-    next = Vector(offset + 2.0 / 3.0 * a, offset + b + 100,0);
+    next = Vector(offset + 2.0 / 3.0 * a, offset * 1.5 + b,0);
     waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
     waypoints.push_back (std::make_pair(locationTime, next));
     
@@ -464,23 +468,38 @@ _______ x x x x x x x
     }
 
     SetConstantMobilityGrid(gridNodes, offset, offset, spaceBetweenNodes, spaceBetweenNodes, nColumns);
-    SetConstantPositionMobility(sinkSrc.Get(1), Vector(offset - 50, offset - 50, 0));
-    //SetConstantPositionMobility(sinkSrc.Get(0), Vector(offset + spaceBetweenNodes * (nColumns - 1) + 50, offset + spaceBetweenNodes * (nColumns - 1) + 50, 0));
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(offset + 25, offset + 25, 0));
+    //SetConstantPositionMobility(sinkSrfc.Get(0), Vector(offset + spaceBetweenNodes * (nColumns - 1) + 50, offset + spaceBetweenNodes * (nColumns - 1) + 50, 0));
 
-    Vector current = Vector(offset + spaceBetweenNodes * (nColumns - 1) + 100 , offset + 2.0 / 3.0 * spaceBetweenNodes * (nColumns - 1), 0), next;
+    Vector current = Vector(offset + spaceBetweenNodes * (nColumns - 1) + 25 , offset + 2.0 / 3.0 * spaceBetweenNodes * (nColumns - 1), 0), next;
     SetupWaypointMobility(sinkSrc.Get(0), current);
     std::vector<std::pair<Time, Vector> > waypoints;
+    waypoints.push_back (std::make_pair(locationTime, current));
 
-    next = Vector(offset + spaceBetweenNodes * (nColumns - 1) - 100, offset + spaceBetweenNodes * (nColumns - 1) - 100 ,0);
+    next = Vector(offset + spaceBetweenNodes * (nColumns - 1) - 25, offset + spaceBetweenNodes * (nColumns - 1) - 25 ,0);
     waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
     waypoints.push_back (std::make_pair(locationTime, next));
     
     current = next;
-    next = Vector(offset + 2.0 / 3.0 * spaceBetweenNodes * (nColumns - 1), offset + spaceBetweenNodes * (nColumns - 1) + 100,0);
+    next = Vector(offset + 2.0 / 3.0 * spaceBetweenNodes * (nColumns - 1), offset + spaceBetweenNodes * (nColumns - 1) + 25,0);
     waypoints.push_back (std::make_pair(Seconds (CalculateDistance(current, next) / srcSpeed), next));
     waypoints.push_back (std::make_pair(locationTime, next));
     
     SetWaypoints(sinkSrc.Get (0), waypoints);
+  } else if (mobilityScene == "straight-line") {
+    // todo, make straight line mobility scene
+
+    NodeContainer allNodes(c1, c2, c3, c4);
+    double spaceBetweenNodes = 100 * scale;
+    double x = 0;
+
+    SetConstantPositionMobility(sinkSrc.Get(1), Vector(x += spaceBetweenNodes, 0, 0));
+
+    for (int i = 0; i < allNodes.GetN (); i++) {
+      SetConstantPositionMobility(allNodes.Get (i), Vector(x += spaceBetweenNodes, 0, 0));
+    }
+
+    SetConstantPositionMobility(sinkSrc.Get(0), Vector(x += spaceBetweenNodes, 0, 0));
   }
 }
 
@@ -524,7 +543,7 @@ int main (int argc, char *argv[])
   cmd.AddValue ("NNodes", "Number of nodes. Min=" + std::to_string(MIN_NODES), nNodes);
   cmd.AddValue ("Scale", "Scale of the scene. Min=1. (only for MobilityScene=city-block)", scale);
   cmd.AddValue ("Protocol", "Which protocol to use: udp or tcp", protocol);
-  cmd.AddValue ("MobilityScene", "Which mobility scene to use of ['static-grid', 'mobile-nodes', 'dense-mesh']", MobilityScene);
+  cmd.AddValue ("MobilityScene", "Which mobility scene to use of ['city-block', 'full-grid', 'straight-line']", MobilityScene);
   cmd.Parse (argc, argv);
 
   scale = scale < 1 ? 1 : scale;
@@ -661,11 +680,15 @@ int main (int argc, char *argv[])
                       MakeCallback (&CourseChange));
 
   // Trace devices (pcap)
-  wifiPhy.EnablePcapAll ("mp-");
-  wifiPhy.EnablePcap ("mobicom_expr_src_" + RoutingModel + ".pcap", devices.Get(0)); //save pcap file for src
-  wifiPhy.EnablePcap ("mobicom_expr_sink_" + RoutingModel + ".pcap", devices.Get(1)); //save pcap file for sink
-    // should we really trace throughput for the sink? It should only send ack messages
 
+  if (RoutingModel == "HWMP") {
+    wifiPhy.EnablePcapAll ("mp-");
+  } else {
+    wifiPhy.EnablePcap ("mp-", devices.Get(0)); //save pcap file for src
+    wifiPhy.EnablePcap ("mp-", devices.Get(1)); //save pcap file for sink
+    // should we really trace throughput for the sink? It should only send ack messages
+  }
+  
   // Now, do the actual simulation.
   NS_LOG_INFO ("Run Simulation.");
 
@@ -684,15 +707,14 @@ int main (int argc, char *argv[])
   AnimationInterface anim ("mobicom_expr_animation_" + RoutingModel + ".xml");
   anim.SkipPacketTracing ();
   anim.UpdateNodeColor (sinkSrc.Get (0), 0, 255, 0);
-  anim.UpdateNodeSize (sinkSrc.Get (0) -> GetId(), 20 * scale, 20 * scale);
+  anim.UpdateNodeSize (sinkSrc.Get (0) -> GetId(), 5 * scale, 5 * scale);
   anim.UpdateNodeColor (sinkSrc.Get (1), 0, 0, 255);
-  anim.UpdateNodeSize (sinkSrc.Get (1) -> GetId(), 20 * scale, 20 * scale);
+  anim.UpdateNodeSize (sinkSrc.Get (1) -> GetId(), 5 * scale, 5 * scale);
   //anim.UpdateNodeColor (holeNodeContainer.Get (0), 0, 0, 255);
   anim.SetMaxPktsPerTraceFile (ULLONG_MAX);
-
   if (MobilityScene == "city-block") {
     anim.SetBackgroundImage ("/Users/muitprogram/Google Drive/joplin-city-block-cropped.jpg",
-                          100.0 * scale, 100.0 * scale, scale / 2, scale / 2, 1);
+                          50.0 * scale, 50.0 * scale, scale / 4, scale / 4, 1);
   }
 
   /* End Animation */

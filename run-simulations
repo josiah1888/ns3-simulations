@@ -1,7 +1,7 @@
 echo "Cleaning"
-rm -rf output
+#rm -rf output
 
-echo "Starting scale simulations simulations..."
+echo "Starting simulations..."
 
 makeDirs=true
 stopTime='600'
@@ -9,30 +9,48 @@ mkdir output
 
 for algorithm in 'HWMP' 'GPSR'; do
     $makeDirs && mkdir "output/$algorithm"
-    for mobilityScene in 'full-grid' 'city-block'; do
+    for mobilityScene in 'full-grid' 'city-block' 'straight-line'; do
         $makeDirs && mkdir "output/$algorithm/$mobilityScene"
         for variation in 'scale' 'density' 'failure'; do
             $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation"
-            for trial in 1 2 3 4 5 6 7 8 9 10; do
+            for trial in 1 2 3 4 5 6; do
                 $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation/trial$trial"
+                nNodes=9 #Can't reliably go higher than this
+                variationArg=''
 
                 if [ $variation == 'scale' ]; then
-                    nNodes="$(( ($trial + 1) * ($trial + 1) ))" 
-                    variationArg="NNodes=$nNodes"
+                    nNodes="$(( ($trial + 1) * 2 ))"
+
+                    if [ $trial == 1 ]; then
+                        nNodes=4
+                    elif [ $trial == 2 ]; then
+                        nNodes=6
+                    elif [ $trial == 3 ]; then
+                        nNodes=9
+                    elif [ $trial == 4 ]; then
+                        nNodes=12
+                    elif [ $trial == 5 ]; then
+                        nNodes=16
+                    elif [ $trial == 6 ]; then
+                        nNodes=20
+                    else
+                        rm -rf "output/$algorithm/$mobilityScene/$variation/trial$trial"
+                        break
+                    fi
                 fi
 
                 if [ $variation == 'density' ]; then
-                    scaleFactor="$((1 + $trial * 2))" 
-                    variationArg="Scale=$scaleFactor"
+                    scaleFactor=$(bc -l <<< "1 + $trial * 0.25")
+                    variationArg="--Scale=$scaleFactor"
                 fi
 
                 if [ $variation == 'failure' ]; then
-                    failureProb=$(bc -l <<< "1.0/10.0 + $trial/20.0")
-                    variationArg="FailureProb=$failureProb"
+                    failureProb=$(bc -l <<< "$trial * 0.1")
+                    variationArg="--FailureProb=$failureProb"
                 fi
 
-                echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg"
-                ./waf --cwd="output/$algorithm/$mobilityScene/$variation/trial$trial" --run "mobicom_expr --NodeDataRate=5 --RoutingModel=$algorithm --StopTime=$stopTime --Protocol=tcp --MobilityScene=$mobilityScene --$variationArg" > "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt"
+                echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg Nodes=$nNodes"
+                ./waf --cwd="output/$algorithm/$mobilityScene/$variation/trial$trial" --run "mobicom_expr --NodeDataRate=5 --RoutingModel=$algorithm --StopTime=$stopTime --Protocol=tcp --MobilityScene=$mobilityScene --NNodes=$nNodes $variationArg" > "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt"
 
                 echo "Analyzing data"
                 srcId=$(pcregrep -o1 'id=([0-9]+);' "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt")
@@ -42,6 +60,7 @@ for algorithm in 'HWMP' 'GPSR'; do
 
                 cd "output/$algorithm/$mobilityScene/$variation/trial$trial" && gnuplot "../../../../../plot-cwnd-$algorithm"
                 cd ../../../../../
+                echo "something here"
             done
         done
     done
