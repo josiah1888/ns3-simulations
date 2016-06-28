@@ -1,11 +1,20 @@
 echo 'Getting components...'
 cd
-$ mkdir workspace
-$ cd workspace
-$ wget http://www.nsnam.org/release/ns-allinone-3.25.tar.bz2
-$ tar xjf ns-allinone-3.25.tar.bz2
+mkdir workspace
+cd workspace
+wget http://www.nsnam.org/release/ns-allinone-3.25.tar.bz2
+tar xjf ns-allinone-3.25.tar.bz2
 cd ns-allinone-3.25
 ./waf configure
 
 echo 'Building application...'
 
+read usr -p 'Enter git username'
+read psw -p 'Enter git password'
+git clone "https://$usr:$psw@github.com/josiah1888/ns3-simulations.git"
+
+cp ns3-simulations/src/. src/ -R
+cp ns3-simulations/scratch/. scratch/ -R
+cp ns3-simulations/. .
+
+./run-simulations
