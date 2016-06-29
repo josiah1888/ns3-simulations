@@ -1,0 +1,6 @@
+./run-hwmp-full-grid &
+./run-hwmp-city-block &
+./run-hwmp-straight-line &
+./run-gpsr-full-grid &
+./run-gpsr-city-block &
+./run-gpsr-straight-line &
