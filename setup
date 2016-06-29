@@ -5,6 +5,7 @@ echo 'Installing prereqs...'
 sudo apt-get install clang++ python
 sudo apt-get install clang
 sudo apt-get install gcc
+sudo apt-get install pcregrep
 
 echo 'Getting components...'
 cd
