@@ -2,8 +2,9 @@ echo 'Updating...'
 sudo apt-get update
 
 echo 'Installing prereqs...'
-sudo apt-get install clang clang++ python
-#sudo apt-get install gcc g++ python
+sudo apt-get install clang++ python
+sudo apt-get install clang
+sudo apt-get install gcc
 
 echo 'Getting components...'
 cd
@@ -13,7 +14,7 @@ wget http://www.nsnam.org/release/ns-allinone-3.25.tar.bz2
 tar xjf ns-allinone-3.25.tar.bz2
 cd ns-allinone-3.25/ns-3.25
 
-echo 'Building application...'
+echo 'Installing application...'
 read -p 'Enter git username' usr
 read -p 'Enter git password' psw
 read -p 'Enter git email' email
@@ -28,11 +29,14 @@ cp ns3-simulations/scratch/. scratch/ -R
 cp ns3-simulations/* . # Should say 'omitting src and scratch'
 ./waf configure
 
-echo 'Installing Wireshark'
+echo 'Installing Wireshark...'
 sudo apt install tshark
 sudo dpkg-reconfigure wireshark-common
 sudo adduser `whoami` wireshark
 
-echo 'Installing gnuplot'
+echo 'Installing gnuplot...'
 sudo apt install gnuplot
-./run-simulations
+
+echo 'Building application...'
+mkdir test-run
+./waf --cwd="test-run" --run "mobicom_expr --RoutingModel=GPSR --StopTime=8 --Protocol=tcp --MobilityScene=straight-line --NNodes=5"

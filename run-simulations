@@ -66,3 +66,5 @@ for algorithm in 'HWMP' 'GPSR'; do
         done
     done
 done
+
+#scp -i ~/Downloads/testkey.pem -r ubuntu@ec2-54-87-132-197.compute-1.amazonaws.com:workspace/ns-allinone-3.25/ns-3.25/test-run ~/test-run
