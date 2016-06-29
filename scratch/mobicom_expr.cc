@@ -35,6 +35,7 @@
 #include <utility>
 #include <climits>
 #include <cmath>
+#include <sstream>
 
 //#include "myapp.h"
 
@@ -540,7 +541,7 @@ int main (int argc, char *argv[])
   cmd.AddValue ("RoutingModel", "Routing algorithm to use. Can be 'HWMP' or 'GPSR'", RoutingModel);
   cmd.AddValue ("EnableNetAnim", "Enable simulation recording for NetAnim", EnableNetAnim);
   cmd.AddValue ("NodeDataRate", "Data rate for nodes", NodeDataRate);
-  cmd.AddValue ("NNodes", "Number of nodes. Min=" + std::to_string(MIN_NODES), nNodes);
+  cmd.AddValue ("NNodes", "Number of nodes.", nNodes);
   cmd.AddValue ("Scale", "Scale of the scene. Min=1. (only for MobilityScene=city-block)", scale);
   cmd.AddValue ("Protocol", "Which protocol to use: udp or tcp", protocol);
   cmd.AddValue ("MobilityScene", "Which mobility scene to use of ['city-block', 'full-grid', 'straight-line']", MobilityScene);
@@ -638,7 +639,7 @@ int main (int argc, char *argv[])
     // ns3TcpSocket->TraceConnectWithoutContext ("CongestionWindow", MakeCallback (&CwndChange));
 
     Ptr<MyApp> app = CreateObject<MyApp> ();
-    app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate (std::to_string (NodeDataRate) + "Mbps"));
+    app->Setup (ns3TcpSocket, sinkAddress, 1448, DataRate ("5Mbps"));
     sinkSrc.Get (0)->AddApplication (app);
     app->SetStartTime (Seconds (1.0));
     app->SetStopTime (StopTime);
@@ -675,8 +676,11 @@ int main (int argc, char *argv[])
 
   std::cout <<"src ip="<<ifcont.GetAddress (0, 0)<<" id="<<sinkSrc.Get (0)->GetId() <<"; sink ip="<<ifcont.GetAddress(1, 0)<<" id="<<sinkSrc.Get (1)->GetId() <<std::endl;
 
+  std::ostringstream temp;  //temp as in temporary
+  temp << sinkSrc.Get (0) ->GetId ();
+
   //log only src movements
-  Config::Connect ("/NodeList/" + std::to_string(sinkSrc.Get (0) ->GetId ()) + "/$ns3::MobilityModel/CourseChange",
+  Config::Connect ("/NodeList/" + temp.str() + "/$ns3::MobilityModel/CourseChange",
                       MakeCallback (&CourseChange));
 
   // Trace devices (pcap)

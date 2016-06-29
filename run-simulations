@@ -4,6 +4,7 @@ echo "Cleaning"
 echo "Starting simulations..."
 
 makeDirs=true
+makePlots=true
 stopTime='600'
 mkdir output
 
@@ -58,9 +59,9 @@ for algorithm in 'HWMP' 'GPSR'; do
                 tshark -r "output/$algorithm/$mobilityScene/$variation/trial$trial/$srcFile" -q -z 'io,stat,1,(tcp || llc)' > "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt"
                 pcregrep -o1 -o4 '^[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9]+)' "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt" | tail -n +2 > "output/$algorithm/$mobilityScene/$variation/trial$trial/io-data.txt"
 
-                cd "output/$algorithm/$mobilityScene/$variation/trial$trial" && gnuplot "../../../../../plot-cwnd-$algorithm"
-                cd ../../../../../
-                echo "something here"
+                makePlots && cd "output/$algorithm/$mobilityScene/$variation/trial$trial" 
+                makePlots && gnuplot "../../../../../plot-cwnd-$algorithm"
+                makePlots && cd ../../../../../
             done
         done
     done

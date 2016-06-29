@@ -1,20 +1,38 @@
+echo 'Updating...'
+sudo apt-get update
+
+echo 'Installing prereqs...'
+sudo apt-get install clang clang++ python
+#sudo apt-get install gcc g++ python
+
 echo 'Getting components...'
 cd
 mkdir workspace
 cd workspace
 wget http://www.nsnam.org/release/ns-allinone-3.25.tar.bz2
 tar xjf ns-allinone-3.25.tar.bz2
-cd ns-allinone-3.25
-./waf configure
+cd ns-allinone-3.25/ns-3.25
 
 echo 'Building application...'
+read -p 'Enter git username' usr
+read -p 'Enter git password' psw
+read -p 'Enter git email' email
 
-read usr -p 'Enter git username'
-read psw -p 'Enter git password'
+sudo apt-get install git
+git config --global user.name "$usr"
+git config --global user.email "$email"
 git clone "https://$usr:$psw@github.com/josiah1888/ns3-simulations.git"
 
 cp ns3-simulations/src/. src/ -R
 cp ns3-simulations/scratch/. scratch/ -R
-cp ns3-simulations/. .
+cp ns3-simulations/* . # Should say 'omitting src and scratch'
+./waf configure
 
+echo 'Installing Wireshark'
+sudo apt install tshark
+sudo dpkg-reconfigure wireshark-common
+sudo adduser `whoami` wireshark
+
+echo 'Installing gnuplot'
+sudo apt install gnuplot
 ./run-simulations
