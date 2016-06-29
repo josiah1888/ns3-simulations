@@ -1,0 +1,70 @@
+echo "Cleaning"
+#rm -rf output
+
+echo "Starting simulations..."
+
+makeDirs=true
+makePlots=true
+stopTime='600'
+mkdir output
+
+for algorithm in 'HWMP'; do
+    $makeDirs && mkdir "output/$algorithm"
+    for mobilityScene in 'full-grid'; do
+        $makeDirs && mkdir "output/$algorithm/$mobilityScene"
+        for variation in 'scale' 'density' 'failure'; do
+            $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation"
+            for trial in 1 2 3 4 5 6; do
+                $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation/trial$trial"
+                nNodes=9 #Can't reliably go higher than this
+                variationArg=''
+
+                if [ $variation == 'scale' ]; then
+                    nNodes="$(( ($trial + 1) * 2 ))"
+
+                    if [ $trial == 1 ]; then
+                        nNodes=4
+                    elif [ $trial == 2 ]; then
+                        nNodes=6
+                    elif [ $trial == 3 ]; then
+                        nNodes=9
+                    elif [ $trial == 4 ]; then
+                        nNodes=12
+                    elif [ $trial == 5 ]; then
+                        nNodes=16
+                    elif [ $trial == 6 ]; then
+                        nNodes=20
+                    else
+                        rm -rf "output/$algorithm/$mobilityScene/$variation/trial$trial"
+                        break
+                    fi
+                fi
+
+                if [ $variation == 'density' ]; then
+                    scaleFactor=$(bc -l <<< "1 + $trial * 0.25")
+                    variationArg="--Scale=$scaleFactor"
+                fi
+
+                if [ $variation == 'failure' ]; then
+                    failureProb=$(bc -l <<< "$trial * 0.1")
+                    variationArg="--FailureProb=$failureProb"
+                fi
+
+                echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg Nodes=$nNodes"
+                ./waf --cwd="output/$algorithm/$mobilityScene/$variation/trial$trial" --run "mobicom_expr --NodeDataRate=5 --RoutingModel=$algorithm --StopTime=$stopTime --Protocol=tcp --MobilityScene=$mobilityScene --NNodes=$nNodes $variationArg" > "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt"
+
+                echo "Analyzing data"
+                srcId=$(pcregrep -o1 'id=([0-9]+);' "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt")
+                srcFile=$(cd "output/$algorithm/$mobilityScene/$variation/trial$trial" && ls mp--$srcId*)
+                tshark -r "output/$algorithm/$mobilityScene/$variation/trial$trial/$srcFile" -q -z 'io,stat,1,(tcp || llc)' > "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt"
+                pcregrep -o1 -o4 '^[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9]+)' "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt" | tail -n +2 > "output/$algorithm/$mobilityScene/$variation/trial$trial/io-data.txt"
+
+                makePlots && cd "output/$algorithm/$mobilityScene/$variation/trial$trial" 
+                makePlots && gnuplot "../../../../../plot-cwnd-$algorithm"
+                makePlots && cd ../../../../../
+            done
+        done
+    done
+done
+
+#scp -i ~/Downloads/testkey.pem -r ubuntu@ec2-54-87-132-197.compute-1.amazonaws.com:workspace/ns-allinone-3.25/ns-3.25/test-run ~/test-run
