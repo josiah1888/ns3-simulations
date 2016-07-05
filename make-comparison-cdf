@@ -1,0 +1,16 @@
+echo "Start"
+
+makeDirs=true
+mkdir output
+
+for mobilityScene in 'full-grid' 'city-block' 'straight-line'; do
+    $makeDirs && mkdir "output/$mobilityScene"
+    for variation in 'scale' 'density' 'failure'; do
+        $makeDirs && mkdir "output/$mobilityScene/$variation"
+        for trial in 1 2 3 4 5 6; do
+            $makeDirs && mkdir "output/$mobilityScene/$variation/trial$trial"
+            matlab -nodesktop -r "makeCdf output2/GPSR/$mobilityScene/$variation/trial$trial/io-data.txt output2/HWMP/$mobilityScene/$variation/trial$trial/io-data.txt output//$mobilityScene/$variation/trial$trial/comparison-cdf.png"
+            sleep 15
+        done
+    done
+done

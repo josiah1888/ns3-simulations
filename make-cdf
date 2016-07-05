@@ -1,0 +1,19 @@
+echo "Start"
+
+makeDirs=true
+mkdir output
+
+for algorithm in 'HWMP' 'GPSR'; do
+    $makeDirs && mkdir "output/$algorithm"
+    for mobilityScene in 'full-grid' 'city-block' 'straight-line'; do
+        $makeDirs && mkdir "output/$algorithm/$mobilityScene"
+        for variation in 'scale' 'density' 'failure'; do
+            $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation"
+            for trial in 1 2 3 4 5 6; do
+                $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation/trial$trial"
+				matlab -nodesktop -r "makeCdf output2/$algorithm/$mobilityScene/$variation/trial$trial/io-data.txt output/$algorithm/$mobilityScene/$variation/trial$trialcdf.png"
+                sleep 15
+            done
+        done
+    done
+done
