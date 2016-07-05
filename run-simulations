@@ -52,9 +52,9 @@ for algorithm in 'HWMP' 'GPSR'; do
                 fi
 
                 if [ $algorithm == 'GPSR' ]; then
-                    tsharkFilter='wlan.fc.retry == 0 && tcp && ip.src == 10.1.1.1 && ip.dst == 10.1.1.2)'
+                    tsharkFilter='wlan.fc.retry == 0 && tcp && ip.src == 10.1.1.1 && ip.dst == 10.1.1.2'
                 else
-                    tsharkFilter='wlan.fc.retry == 0 && llc && ip.src == 10.1.1.1 && ip.dst == 10.1.1.2)'
+                    tsharkFilter='wlan.fc.retry == 0 && llc && ip.src == 10.1.1.1 && ip.dst == 10.1.1.2'
                 fi
 
                 echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg Nodes=$nNodes"
