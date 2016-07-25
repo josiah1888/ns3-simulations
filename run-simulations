@@ -1,74 +1,91 @@
 echo "Cleaning"
-#rm -rf output
+rm -rf output
 
 echo "Starting simulations..."
 
-makeDirs=false
-makePlots=false
-runSim=false
+makeDirs=true
+makePlots=true
+runSim=true
+runTshark=true
 stopTime='600'
-mkdir output
+numTrials=1
+$makeDirs && mkdir output
 
-for algorithm in 'HWMP' 'GPSR'; do
+for algorithm in 'GPSR' 'HWMP'; do
     $makeDirs && mkdir "output/$algorithm"
     for mobilityScene in 'full-grid' 'city-block' 'straight-line'; do
         $makeDirs && mkdir "output/$algorithm/$mobilityScene"
-        for variation in 'scale' 'density' 'failure'; do
+        for variation in 'scale' 'failure'; do
             $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation"
-            for trial in 1 2 3 4 5 6; do
-                $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation/trial$trial"
-                nNodes=9 #Can't reliably go higher than this
-                variationArg=''
+            for experiment in 1 2 3 4 5 6; do
+                $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation/experiment$experiment"
+                for trial in $(seq 1 $numTrials); do
+                    $makeDirs && mkdir "output/$algorithm/$mobilityScene/$variation/experiment$experiment/trial$trial"
+                    nNodes=9 #Can't reliably go higher than this
+                    variationArg=''
+                    randInt=$(( $RANDOM % 1000 ))
+                    randReal=$(bc -l <<< "1 + $randInt * 0.001")
 
-                if [ $variation == 'scale' ]; then
-                    nNodes="$(( ($trial + 1) * 2 ))"
+                    echo "Using scale factor: $randReal"
 
-                    if [ $trial == 1 ]; then
-                        nNodes=4
-                    elif [ $trial == 2 ]; then
-                        nNodes=6
-                    elif [ $trial == 3 ]; then
-                        nNodes=9
-                    elif [ $trial == 4 ]; then
-                        nNodes=12
-                    elif [ $trial == 5 ]; then
-                        nNodes=16
-                    elif [ $trial == 6 ]; then
-                        nNodes=20
-                    else
-                        rm -rf "output/$algorithm/$mobilityScene/$variation/trial$trial"
-                        break
+                    if [ $variation == 'scale' ]; then
+                        nNodes="$(( ($experiment + 1) * 2 ))"
+
+                        if [ $experiment == 1 ]; then
+                            nNodes=4
+                        elif [ $experiment == 2 ]; then
+                            nNodes=6
+                        elif [ $experiment == 3 ]; then
+                            nNodes=9
+                        elif [ $experiment == 4 ]; then
+                            nNodes=12
+                        elif [ $experiment == 5 ]; then
+                            nNodes=16
+                        elif [ $experiment == 6 ]; then
+                            nNodes=20
+                        fi
                     fi
-                fi
 
-                if [ $variation == 'density' ]; then
-                    scaleFactor=$(bc -l <<< "1 + $trial * 0.25")
-                    variationArg="--Scale=$scaleFactor"
-                fi
+                    if [ $variation == 'failure' ]; then
+                        failureProb=$(bc -l <<< "$experiment * 0.1")
+                        variationArg="--FailureProb=$failureProb"
+                    fi
 
-                if [ $variation == 'failure' ]; then
-                    failureProb=$(bc -l <<< "$trial * 0.1")
-                    variationArg="--FailureProb=$failureProb"
-                fi
+                    if [ $algorithm == 'GPSR' ]; then
+                        tsharkFilter='wlan.fc.retry == 0 && tcp && ip.src == 10.1.1.1 && ip.dst == 10.1.1.2'
+                        headerSize=76
+                    else
+                        tsharkFilter='wlan.fc.retry == 0 && llc && wlan.sa == 00:00:00:00:00:01 && wlan.da == 00:00:00:00:00:02'
+                        headerSize=48
+                    fi
 
-                if [ $algorithm == 'GPSR' ]; then
-                    tsharkFilter='wlan.fc.retry == 0 && tcp && ip.src == 10.1.1.1 && ip.dst == 10.1.1.2)'
-                else
-                    tsharkFilter='wlan.fc.retry == 0 && llc && ip.src == 10.1.1.1 && ip.dst == 10.1.1.2)'
-                fi
+                    echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg Nodes=$nNodes"
+                    $runSim && ./waf --cwd="output/$algorithm/$mobilityScene/$variation/experiment$experiment/trial$trial" --run "mobicom_expr --Scale=$randReal --RoutingModel=$algorithm --StopTime=$stopTime --Protocol=tcp --MobilityScene=$mobilityScene --NNodes=$nNodes $variationArg" > "output/$algorithm/$mobilityScene/$variation/experiment$experiment/trial$trial/output.txt"
 
-                echo "Starting simulation: $algorithm/$mobilityScene/$variation with $variationArg Nodes=$nNodes"
-                $runSim && ./waf --cwd="output/$algorithm/$mobilityScene/$variation/trial$trial" --run "mobicom_expr --NodeDataRate=5 --RoutingModel=$algorithm --StopTime=$stopTime --Protocol=tcp --MobilityScene=$mobilityScene --NNodes=$nNodes $variationArg" > "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt"
+                    cd "output/$algorithm/$mobilityScene/$variation/experiment$experiment/trial$trial"
+                    root="../../../../../.."
 
-                echo "Analyzing data"
-                srcId=$(pcregrep -o2 'id=([0-9]+);' "output/$algorithm/$mobilityScene/$variation/trial$trial/output.txt")
-                srcFile=$(cd "output/$algorithm/$mobilityScene/$variation/trial$trial" && ls mp--$srcId*)
-                tshark -r "output/$algorithm/$mobilityScene/$variation/trial$trial/$srcFile" -q -z "io,stat,1,($tsharkFilter)" > "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt"
-                pcregrep -o1 -o3 -o4 '^[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9]+)' "output/$algorithm/$mobilityScene/$variation/trial$trial/tshark-out.txt" | tail -n +2 | awk '{print $1,"\t",($3 - $2 * 76)}' > "output/$algorithm/$mobilityScene/$variation/trial$trial/io-data.txt"
+                    echo "Analyzing data"
+                    srcId=$(pcregrep -o1 'id=([0-9]+)$' "output.txt")
+                    srcFile=$(ls mp--$srcId*)
+                    $runTshark && tshark -r "$srcFile" -q -z "io,stat,1,($tsharkFilter)" > "tshark-out.txt"
+                                                                                                                                            
+                    tail -n +13 "tshark-out.txt" | pcregrep -o1 -o3 -o4 '^[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9\s]+)[^0-9]+([0-9]+)' | awk -v size=$headerSize '{print $1,"\t",($3 - $2 * size)}' > "io-data.txt"
+                    awk '{a+=$2} END{print a/NR}' io-data.txt > 'average-io.txt'
+                    awk '{delta = $2 - avg; avg += delta / NR; mean2 += delta * ($2 - avg); } END { print sqrt(mean2 / NR); }' io-data.txt > 'std-io.txt'
 
-                $makePlots && cd "output/$algorithm/$mobilityScene/$variation/trial$trial" 
-                $makePlots && gnuplot "../../../../../plot-cwnd-$algorithm"
-                $makePlots && cd ../../../../../
+                    echo "Deleting .pcap files"
+                    ls mp--* | xargs rm
+
+                    $makePlots && gnuplot "$root/plot-cwnd-$algorithm"
+                    cd "$root"
+                done
+
+                echo "Averaging io-data"
+                cd "output/$algorithm/$mobilityScene/$variation/experiment$experiment"
+                cat trial*/average-io.txt | awk '{a+=$1} END{print a/NR}' > 'average-io.txt'
+                cat trial*/std-io.txt | awk '{a+=$1} END{print a/NR}' > 'std-io.txt'
+                cd "../../../../../"
             done
         done
     done

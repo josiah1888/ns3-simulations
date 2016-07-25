@@ -542,12 +542,12 @@ int main (int argc, char *argv[])
   cmd.AddValue ("EnableNetAnim", "Enable simulation recording for NetAnim", EnableNetAnim);
   cmd.AddValue ("NodeDataRate", "Data rate for nodes", NodeDataRate);
   cmd.AddValue ("NNodes", "Number of nodes.", nNodes);
-  cmd.AddValue ("Scale", "Scale of the scene. Min=1. (only for MobilityScene=city-block)", scale);
+  cmd.AddValue ("Scale", "Scale of the scene.", scale);
   cmd.AddValue ("Protocol", "Which protocol to use: udp or tcp", protocol);
   cmd.AddValue ("MobilityScene", "Which mobility scene to use of ['city-block', 'full-grid', 'straight-line']", MobilityScene);
   cmd.Parse (argc, argv);
 
-  scale = scale < 1 ? 1 : scale;
+  std::cout << "Scale: " << scale;
 
 //
 // Explicitly create the nodes required by the topology (shown above).
