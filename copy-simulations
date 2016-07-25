@@ -1,0 +1,38 @@
+echo "Cleaning"
+rm -rf ~/output
+
+echo "Starting simulations..."
+
+makeDirs=true
+makePlots=true
+stopTime='600'
+mkdir ~/output
+
+for algorithm in 'HWMP' 'GPSR'; do
+    $makeDirs && mkdir ~/output/$algorithm
+    for mobilityScene in 'full-grid' 'city-block' 'straight-line'; do
+        $makeDirs && mkdir ~/output/$algorithm/$mobilityScene
+        for variation in 'scale' 'density' 'failure'; do
+            $makeDirs && mkdir ~/output/$algorithm/$mobilityScene/$variation
+            for trial in 1 2 3 4 5 6; do
+		path=output/$algorithm/$mobilityScene/$variation/trial$trial
+                $makeDirs && mkdir ~/$path/
+                cp $path/cwnd-gpsr.png ~/$path/cwnd-gpsr.png
+                
+                cp $path/cwnd-hwmp.png ~/$path/cwnd-hwmp.png
+
+                cp $path/cwnd_$algorithm.txt ~/$path/cwnd_$algorithm.txt
+
+                cp $path/fit.log ~/$path/fit.log
+
+                cp $path/io-data.txt ~/$path/io-data.txt
+
+                cp $path/output.txt ~/$path/output.txt
+
+                cp $path/tshark-out.txt ~/$path/tshark-out.txt
+            done
+        done
+    done
+done
+
+#scp -i ~/Downloads/testkey.pem -r ubuntu@ec2-54-87-132-197.compute-1.amazonaws.com:workspace/ns-allinone-3.25/ns-3.25/test-run ~/test-run
