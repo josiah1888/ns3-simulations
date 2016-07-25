@@ -8,7 +8,7 @@ makePlots=true
 runSim=true
 runTshark=true
 stopTime='600'
-numTrials=1
+numTrials=50
 $makeDirs && mkdir output
 
 for algorithm in 'GPSR' 'HWMP'; do
